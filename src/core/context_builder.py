@@ -2,6 +2,7 @@ import discord
 
 from discord_adapter.message_parser import BotRequest
 from services.guild_config_service import GuildConfigService
+from services.memory_service import MemoryService
 from services.music_service import MusicService
 
 
@@ -11,17 +12,19 @@ class ContextBuilder:
         client: discord.Client,
         music_service: MusicService | None = None,
         guild_config: GuildConfigService | None = None,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self._client = client
         self._music = music_service
         self._guild_config = guild_config
+        self._memory = memory_service
 
     async def build(self, request: BotRequest) -> dict:
         guild = self._client.get_guild(request.guild_id)
         bot_member = guild.get_member(self._client.user.id) if guild else None
 
         persona = (
-            self._guild_config.get_persona(request.guild_id)
+            await self._guild_config.get_persona(request.guild_id)
             if self._guild_config
             else "귀엽고 친근한 여자애처럼 행동해. 반말로 대화해도 돼."
         )
@@ -73,6 +76,12 @@ class ContextBuilder:
                 "queue_length": info["queue_length"],
             }
 
+        user_memories: list[dict] = []
+        guild_memories: list[dict] = []
+        if self._memory:
+            user_memories = await self._memory.list("user", request.user_id)
+            guild_memories = await self._memory.list("guild", request.guild_id)
+
         return {
             "guild": guild_ctx,
             "user": user_ctx,
@@ -82,4 +91,8 @@ class ContextBuilder:
             },
             "music_state": music_state,
             "recent_messages": recent_messages,
+            "memories": {
+                "user": user_memories,
+                "guild": guild_memories,
+            },
         }

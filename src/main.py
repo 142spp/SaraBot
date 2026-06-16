@@ -15,9 +15,12 @@ from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
 from services.guild_config_service import GuildConfigService
 from services.llm_service import LLMService
+from services.memory_service import MemoryService
 from services.music_service import MusicService
 from services.voice_service import VoiceService
+from storage.db import close_pool, init_schema
 from tools.chat_tools import RespondTextTool
+from tools.memory_tools import ForgetUserMemoryTool, RememberUserPreferenceTool
 from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, SkipMusicTool
 from tools.summary_tools import SummarizeRecentChatTool
 from tools.voice_tools import GetUserVoiceChannelTool, JoinVoiceTool, LeaveVoiceTool
@@ -31,6 +34,10 @@ async def main() -> None:
         raise RuntimeError("DISCORD_TOKEN is not set")
     if not config.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is not set")
+    if not config.DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set")
+
+    await init_schema()
 
     intents = discord.Intents.default()
     intents.message_content = True
@@ -40,6 +47,7 @@ async def main() -> None:
 
     voice_service = VoiceService(client)
     music_service = MusicService(client)
+    memory_service = MemoryService()
     guild_config = GuildConfigService()
     llm_service = LLMService()
     policy = PolicyLayer(client)
@@ -53,16 +61,21 @@ async def main() -> None:
         SkipMusicTool(music_service),
         ShowQueueTool(music_service),
         SummarizeRecentChatTool(client),
+        RememberUserPreferenceTool(memory_service),
+        ForgetUserMemoryTool(memory_service),
     ])
 
-    context_builder = ContextBuilder(client, music_service, guild_config)
+    context_builder = ContextBuilder(client, music_service, guild_config, memory_service)
     agent = Agent(context_builder, llm_service, policy, tool_executor)
     bot_core = BotCore(agent)
 
     register_events(client, bot_core)
 
-    logger.info("Starting Sachiko bot...")
-    await client.start(config.DISCORD_TOKEN)
+    try:
+        logger.info("Starting Sachiko bot...")
+        await client.start(config.DISCORD_TOKEN)
+    finally:
+        await close_pool()
 
 
 if __name__ == "__main__":
