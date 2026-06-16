@@ -14,8 +14,10 @@ from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
 from services.llm_service import LLMService
+from services.music_service import MusicService
 from services.voice_service import VoiceService
 from tools.chat_tools import RespondTextTool
+from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, SkipMusicTool
 from tools.voice_tools import GetUserVoiceChannelTool, JoinVoiceTool, LeaveVoiceTool
 from utils.logger import get_logger
 
@@ -35,6 +37,7 @@ async def main() -> None:
     client = discord.Client(intents=intents)
 
     voice_service = VoiceService(client)
+    music_service = MusicService(client)
     llm_service = LLMService()
     policy = PolicyLayer(client)
     tool_executor = ToolExecutor([
@@ -42,9 +45,13 @@ async def main() -> None:
         GetUserVoiceChannelTool(voice_service),
         JoinVoiceTool(voice_service),
         LeaveVoiceTool(voice_service),
+        SearchMusicTool(music_service),
+        PlayMusicTool(music_service, voice_service),
+        SkipMusicTool(music_service),
+        ShowQueueTool(music_service),
     ])
 
-    context_builder = ContextBuilder(client)
+    context_builder = ContextBuilder(client, music_service)
     agent = Agent(context_builder, llm_service, policy, tool_executor)
     bot_core = BotCore(agent)
 

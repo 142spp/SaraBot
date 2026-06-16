@@ -1,11 +1,13 @@
 import discord
 
 from discord_adapter.message_parser import BotRequest
+from services.music_service import MusicService
 
 
 class ContextBuilder:
-    def __init__(self, client: discord.Client) -> None:
+    def __init__(self, client: discord.Client, music_service: MusicService | None = None) -> None:
         self._client = client
+        self._music = music_service
 
     async def build(self, request: BotRequest) -> dict:
         guild = self._client.get_guild(request.guild_id)
@@ -50,6 +52,15 @@ class ContextBuilder:
                 )
             recent_messages.reverse()
 
+        music_state: dict = {"current_track": None, "queue_length": 0, "is_playing": False}
+        if self._music:
+            info = self._music.get_queue_info(request.guild_id)
+            music_state = {
+                "is_playing": info["is_playing"],
+                "current_track": info["current_track"],
+                "queue_length": info["queue_length"],
+            }
+
         return {
             "guild": guild_ctx,
             "user": user_ctx,
@@ -57,10 +68,6 @@ class ContextBuilder:
                 "in_voice_channel": bot_voice is not None,
                 "voice_channel": bot_voice,
             },
-            "music_state": {
-                "current_track": None,
-                "queue_length": 0,
-                "is_playing": False,
-            },
+            "music_state": music_state,
             "recent_messages": recent_messages,
         }
