@@ -67,9 +67,11 @@ class PlayMusicTool(BaseTool):
             "function": {
                 "name": "play_music",
                 "description": (
-                    "검색어로 음악 한 곡을 큐에 추가하고 재생한다. "
-                    "봇이 보이스 채널에 없으면 자동으로 입장한다. "
-                    "여러 곡을 재생하려면 이 툴을 곡마다 한 번씩 호출해야 한다."
+                    "음악 한 곡을 큐에 추가하고 재생한다. "
+                    "query에 YouTube URL을 넣으면 그 영상을 재생하고, "
+                    "일반 검색어를 넣으면 가장 인기 있는 한 곡을 재생한다. "
+                    "여러 곡 재생 시에는 search_music으로 먼저 검색한 뒤 "
+                    "각 결과의 webpage_url을 query로 사용해야 중복을 방지할 수 있다."
                 ),
                 "parameters": {
                     "type": "object",
