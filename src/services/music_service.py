@@ -49,6 +49,8 @@ class MusicService:
     def __init__(self, client: discord.Client) -> None:
         self._client = client
         self._states: dict[int, GuildMusicState] = {}
+        # search_music 결과를 webpage_url 기준으로 캐싱 — play_music 재호출 방지
+        self._track_cache: dict[str, Track] = {}
 
     def get_state(self, guild_id: int) -> GuildMusicState:
         if guild_id not in self._states:
@@ -81,10 +83,17 @@ class MusicService:
                 return results
 
         tracks = await loop.run_in_executor(None, _extract)
-        logger.debug(f"Search '{query}' → {len(tracks)} results")
+        for track in tracks:
+            if track.webpage_url:
+                self._track_cache[track.webpage_url] = track
+        logger.debug(f"Search '{query}' → {len(tracks)} results (cached {len(tracks)})")
         return tracks
 
     async def _fetch_track(self, query: str) -> Track | None:
+        if query in self._track_cache:
+            logger.debug(f"Track cache hit: {query}")
+            return self._track_cache[query]
+
         loop = asyncio.get_event_loop()
 
         def _extract():
