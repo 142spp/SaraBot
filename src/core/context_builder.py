@@ -1,22 +1,34 @@
 import discord
 
 from discord_adapter.message_parser import BotRequest
+from services.guild_config_service import GuildConfigService
 from services.music_service import MusicService
 
 
 class ContextBuilder:
-    def __init__(self, client: discord.Client, music_service: MusicService | None = None) -> None:
+    def __init__(
+        self,
+        client: discord.Client,
+        music_service: MusicService | None = None,
+        guild_config: GuildConfigService | None = None,
+    ) -> None:
         self._client = client
         self._music = music_service
+        self._guild_config = guild_config
 
     async def build(self, request: BotRequest) -> dict:
         guild = self._client.get_guild(request.guild_id)
         bot_member = guild.get_member(self._client.user.id) if guild else None
 
+        persona = (
+            self._guild_config.get_persona(request.guild_id)
+            if self._guild_config
+            else "귀엽고 친근한 여자애처럼 행동해. 반말로 대화해도 돼."
+        )
         guild_ctx = {
             "id": str(request.guild_id),
             "name": guild.name if guild else "Unknown",
-            "persona": "귀엽고 친근한 여자애처럼 행동해. 반말로 대화해도 돼.",
+            "persona": persona,
         }
 
         user_ctx: dict = {
