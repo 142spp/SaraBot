@@ -19,7 +19,10 @@ class RememberUserPreferenceTool(BaseTool):
             "type": "function",
             "function": {
                 "name": "remember_user_preference",
-                "description": "사용자가 명시적으로 기억해달라고 한 개인 선호나 서버 설정을 저장한다.",
+                "description": (
+                    "사용자가 기억해달라고 한 개인 선호나 서버 설정을 저장한다. "
+                    "scope 선택이 중요하다. 기본은 user이며, 헷갈리면 user를 써라."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -27,7 +30,12 @@ class RememberUserPreferenceTool(BaseTool):
                         "scope": {
                             "type": "string",
                             "enum": ["user", "guild"],
-                            "description": "user: 개인 선호, guild: 서버 전체 설정",
+                            "description": (
+                                "user: 요청한 본인에게만 적용되는 개인 선호/정보. "
+                                "다른 유저에게 노출되지 않는다. '나한테 ~해줘'는 항상 user. "
+                                "guild: 서버 전원에게 공유되는 설정. "
+                                "'모두에게', '이 서버에선' 처럼 전체 적용을 명시했을 때만 사용."
+                            ),
                         },
                     },
                     "required": ["content", "scope"],

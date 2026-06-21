@@ -9,7 +9,7 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-MAX_AGENT_STEPS = 5
+MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
 
 
@@ -49,6 +49,7 @@ class Agent:
             if not response.tool_calls:
                 logger.info("Agent done | direct response (no tool calls)")
                 return response.content or "..."
+
 
             messages.append(
                 {

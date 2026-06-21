@@ -14,14 +14,23 @@ from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
 from services.guild_config_service import GuildConfigService
+from services.embedding_service import EmbeddingService
 from services.llm_service import LLMService
 from services.memory_service import MemoryService
+from services.message_archive_service import MessageArchiveService
 from services.music_service import MusicService
 from services.voice_service import VoiceService
 from storage.db import close_pool, init_schema
-from tools.chat_tools import RespondTextTool
+from tools.archive_tools import (
+    AnalyzeUserTool,
+    IngestChannelHistoryTool,
+    RecallThisDayTool,
+    SearchChatHistoryTool,
+)
+from tools.chat_tools import RespondTextTool, SayTool
 from tools.memory_tools import ForgetUserMemoryTool, RememberUserPreferenceTool
 from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, SkipMusicTool
+from tools.sql_tools import RunSqlTool
 from tools.summary_tools import SummarizeRecentChatTool
 from tools.voice_tools import GetUserVoiceChannelTool, JoinVoiceTool, LeaveVoiceTool
 from utils.logger import get_logger
@@ -48,10 +57,13 @@ async def main() -> None:
     voice_service = VoiceService(client)
     music_service = MusicService(client)
     memory_service = MemoryService()
+    embedding_service = EmbeddingService()
+    archive_service = MessageArchiveService(client, embedding_service)
     guild_config = GuildConfigService()
     llm_service = LLMService()
     policy = PolicyLayer(client)
     tool_executor = ToolExecutor([
+        SayTool(client),
         RespondTextTool(),
         GetUserVoiceChannelTool(voice_service),
         JoinVoiceTool(voice_service),
@@ -63,6 +75,11 @@ async def main() -> None:
         SummarizeRecentChatTool(client),
         RememberUserPreferenceTool(memory_service),
         ForgetUserMemoryTool(memory_service),
+        IngestChannelHistoryTool(archive_service),
+        SearchChatHistoryTool(archive_service),
+        AnalyzeUserTool(archive_service),
+        RecallThisDayTool(archive_service),
+        RunSqlTool(),
     ])
 
     context_builder = ContextBuilder(client, music_service, guild_config, memory_service)

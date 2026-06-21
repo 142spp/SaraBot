@@ -1,4 +1,52 @@
+import discord
+
 from tools.base import BaseTool
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class SayTool(BaseTool):
+    """중간 메시지 전송 — 루프는 계속된다."""
+
+    def __init__(self, client: discord.Client) -> None:
+        self._client = client
+
+    @property
+    def name(self) -> str:
+        return "say"
+
+    @property
+    def definition(self) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": "say",
+                "description": (
+                    "작업 전에 사용자에게 중간 메시지를 즉시 전송한다. "
+                    "루프는 종료되지 않으므로 이후 다른 툴을 계속 호출할 수 있다. "
+                    "확인 중이거나 처리 시간이 걸릴 때 사용. "
+                    "최종 답변은 반드시 respond_text로 마무리한다."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string"},
+                    },
+                    "required": ["message"],
+                },
+            },
+        }
+
+    async def execute(self, args: dict, request) -> dict:
+        message = args.get("message")
+        if not message:
+            return {"ok": True}  # 빈 say는 조용히 무시
+        channel = self._client.get_channel(request.channel_id)
+        if channel and hasattr(channel, "send"):
+            await channel.send(message)
+            logger.info(f"say → #{channel.name}: {message[:80]!r}")
+        return {"ok": True}
 
 
 class RespondTextTool(BaseTool):
@@ -24,4 +72,8 @@ class RespondTextTool(BaseTool):
         }
 
     async def execute(self, args: dict, request) -> dict:
-        return {"ok": True, "message": args["message"]}
+        message = args.get("message")
+        if not message:
+            # message 누락 시 크래시 대신 루프 계속 → LLM이 다시 제대로 호출
+            return {"ok": False, "error": "message 인자가 비어있어. message를 채워서 다시 호출해."}
+        return {"ok": True, "message": message}

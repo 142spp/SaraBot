@@ -60,10 +60,12 @@ class ContextBuilder:
             async for msg in channel.history(
                 limit=20, before=discord.Object(id=request.message_id)
             ):
-                if msg.author.bot:
-                    continue
                 recent_messages.append(
-                    {"author": msg.author.display_name, "content": msg.content}
+                    {
+                        "author": msg.author.display_name,
+                        "content": msg.content,
+                        "is_bot": msg.author.bot,
+                    }
                 )
             recent_messages.reverse()
 

@@ -20,7 +20,11 @@ class SearchMusicTool(BaseTool):
             "type": "function",
             "function": {
                 "name": "search_music",
-                "description": "검색어를 기반으로 재생 가능한 음악 후보를 검색한다.",
+                "description": (
+                    "검색어를 기반으로 재생 가능한 음악 후보를 검색한다. "
+                    "1회 호출에 3~5초 소요된다. "
+                    "호출 전에 반드시 say로 사용자에게 먼저 알려줘."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -155,11 +159,15 @@ class ShowQueueTool(BaseTool):
             "type": "function",
             "function": {
                 "name": "show_queue",
-                "description": "현재 서버의 음악 재생 큐를 반환한다.",
+                "description": (
+                    "현재 서버의 음악 재생 큐를 Discord embed로 채팅에 직접 전송한다. "
+                    "사용자가 '대기열', '큐', '뭐 틀어?' 등 재생 목록을 물어보면 반드시 이 툴을 호출해. "
+                    "이 툴이 embed를 전송하므로 respond_text에서 곡 목록을 다시 나열하지 마."
+                ),
                 "parameters": {"type": "object", "properties": {}, "required": []},
             },
         }
 
     async def execute(self, args: dict, request) -> dict:
-        info = self._music.get_queue_info(request.guild_id)
-        return {"ok": True, **info}
+        await self._music.send_queue_embed(request.guild_id, request.channel_id)
+        return {"ok": True}
