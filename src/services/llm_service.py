@@ -109,3 +109,12 @@ class LLMService:
             logger.debug(f"LLM content | {preview!r}")
 
         return msg
+
+    async def judge(self, prompt: str) -> str:
+        """페르소나·툴 없는 단발 판정용 호출. 응답 텍스트만 반환한다."""
+        response = await self._client.chat.completions.create(
+            model=config.OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=30,
+        )
+        return response.choices[0].message.content or ""

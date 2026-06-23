@@ -197,16 +197,24 @@ class ChunkRepository:
         )
 
     async def recall_this_day(
-        self, guild_id: int, min_participants: int = 3, min_messages: int = 8
-    ) -> dict | None:
-        """오늘(KST 월-일)에 해당하는 과거 연도의 '활발한' 대화 청크를 랜덤 1개 반환 (서버 전체)."""
+        self,
+        guild_id: int,
+        min_participants: int = 2,
+        min_messages: int = 5,
+        limit: int = 8,
+    ) -> list[dict]:
+        """오늘(KST 월-일)의 과거 대화 후보를 웃음(ㅋ/ㅎ) 밀도 순으로 반환 (서버 전체).
+        최소 활성(참여자·메시지) 바닥선을 깐 뒤 웃음 점수 상위 N개를 뽑는다.
+        ㅋ는 거의 웃음이라 가중치 2, ㅎ는 노이즈가 있어 가중치 1."""
         pool = await get_pool()
-        row = await pool.fetchrow(
+        rows = await pool.fetch(
             """
             WITH cand AS (
                 SELECT authors, content, start_at,
                        array_length(string_to_array(authors, ', '), 1) AS participants,
-                       (length(content) - length(replace(content, chr(10), '')) + 1) AS msgs
+                       (length(content) - length(replace(content, chr(10), '')) + 1) AS msgs,
+                       (length(content) - length(replace(content, 'ㅋ', ''))) AS laughs_k,
+                       (length(content) - length(replace(content, 'ㅎ', ''))) AS laughs_h
                 FROM message_chunks
                 WHERE guild_id = $1
                   AND EXTRACT(MONTH FROM start_at AT TIME ZONE 'Asia/Seoul')
@@ -216,21 +224,23 @@ class ChunkRepository:
                   AND EXTRACT(YEAR FROM start_at AT TIME ZONE 'Asia/Seoul')
                       < EXTRACT(YEAR FROM now() AT TIME ZONE 'Asia/Seoul')
             )
-            SELECT authors, content, start_at
+            SELECT authors, content, start_at, (2 * laughs_k + laughs_h) AS fun_score
             FROM cand
             WHERE participants >= $2 AND msgs >= $3
-            ORDER BY random()
-            LIMIT 1
+            ORDER BY fun_score DESC, random()
+            LIMIT $4
             """,
-            guild_id, min_participants, min_messages,
+            guild_id, min_participants, min_messages, limit,
         )
-        if not row:
-            return None
-        return {
-            "authors": row["authors"],
-            "content": row["content"],
-            "start_at": row["start_at"],
-        }
+        return [
+            {
+                "authors": r["authors"],
+                "content": r["content"],
+                "start_at": r["start_at"],
+                "fun_score": r["fun_score"],
+            }
+            for r in rows
+        ]
 
     async def vector_search(
         self, guild_id: int, embedding_literal: str, limit: int = 5

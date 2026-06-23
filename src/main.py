@@ -13,6 +13,7 @@ from core.context_builder import ContextBuilder
 from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
+from scheduler import setup_daily_recall
 from services.guild_config_service import GuildConfigService
 from services.conversation_memory_service import ConversationMemoryService
 from services.embedding_service import EmbeddingService
@@ -63,9 +64,9 @@ async def main() -> None:
     conversation_memory = ConversationMemoryService()
     embedding_service = EmbeddingService()
     image_service = ImageService()
-    archive_service = MessageArchiveService(client, embedding_service)
-    guild_config = GuildConfigService()
     llm_service = LLMService()
+    archive_service = MessageArchiveService(client, embedding_service, llm_service)
+    guild_config = GuildConfigService()
     policy = PolicyLayer(client)
     tool_executor = ToolExecutor([
         SayTool(client),
@@ -105,6 +106,14 @@ async def main() -> None:
     bot_core = BotCore(agent)
 
     register_events(client, bot_core)
+
+    if config.RECALL_CHANNEL_ID:
+        setup_daily_recall(
+            client,
+            archive_service,
+            config.RECALL_CHANNEL_ID,
+            config.RECALL_HOUR_KST,
+        )
 
     try:
         logger.info("Starting Sachiko bot...")
