@@ -13,3 +13,6 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 # 'N년 전 오늘' 자동 포스팅 (0이면 비활성)
 RECALL_CHANNEL_ID: int = int(os.getenv("RECALL_CHANNEL_ID", "0"))
 RECALL_HOUR_KST: int = int(os.getenv("RECALL_HOUR_KST", "21"))
+
+# 웹 검색 (Tavily) — 비어있으면 web_search 비활성
+TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
