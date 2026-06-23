@@ -32,6 +32,7 @@ from tools.archive_tools import (
     SearchChatHistoryTool,
 )
 from tools.chat_tools import RespondTextTool, SayTool
+from tools.help_tools import ShowHelpTool
 from tools.image_tools import GenerateImageTool
 from tools.memory_tools import ForgetUserMemoryTool, RememberUserPreferenceTool
 from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, SkipMusicTool
@@ -74,6 +75,7 @@ async def main() -> None:
     tool_executor = ToolExecutor([
         SayTool(client),
         RespondTextTool(),
+        ShowHelpTool(),
         GenerateImageTool(client, image_service),
         GetUserVoiceChannelTool(voice_service),
         JoinVoiceTool(voice_service),
