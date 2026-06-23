@@ -14,7 +14,9 @@ from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
 from services.guild_config_service import GuildConfigService
+from services.conversation_memory_service import ConversationMemoryService
 from services.embedding_service import EmbeddingService
+from services.image_service import ImageService
 from services.llm_service import LLMService
 from services.memory_service import MemoryService
 from services.message_archive_service import MessageArchiveService
@@ -28,6 +30,7 @@ from tools.archive_tools import (
     SearchChatHistoryTool,
 )
 from tools.chat_tools import RespondTextTool, SayTool
+from tools.image_tools import GenerateImageTool
 from tools.memory_tools import ForgetUserMemoryTool, RememberUserPreferenceTool
 from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, SkipMusicTool
 from tools.sql_tools import RunSqlTool
@@ -57,7 +60,9 @@ async def main() -> None:
     voice_service = VoiceService(client)
     music_service = MusicService(client)
     memory_service = MemoryService()
+    conversation_memory = ConversationMemoryService()
     embedding_service = EmbeddingService()
+    image_service = ImageService()
     archive_service = MessageArchiveService(client, embedding_service)
     guild_config = GuildConfigService()
     llm_service = LLMService()
@@ -65,6 +70,7 @@ async def main() -> None:
     tool_executor = ToolExecutor([
         SayTool(client),
         RespondTextTool(),
+        GenerateImageTool(client, image_service),
         GetUserVoiceChannelTool(voice_service),
         JoinVoiceTool(voice_service),
         LeaveVoiceTool(voice_service),
@@ -82,8 +88,20 @@ async def main() -> None:
         RunSqlTool(),
     ])
 
-    context_builder = ContextBuilder(client, music_service, guild_config, memory_service)
-    agent = Agent(context_builder, llm_service, policy, tool_executor)
+    context_builder = ContextBuilder(
+        client,
+        music_service,
+        guild_config,
+        memory_service,
+        conversation_memory,
+    )
+    agent = Agent(
+        context_builder,
+        llm_service,
+        policy,
+        tool_executor,
+        conversation_memory,
+    )
     bot_core = BotCore(agent)
 
     register_events(client, bot_core)

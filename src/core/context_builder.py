@@ -4,6 +4,16 @@ from discord_adapter.message_parser import BotRequest
 from services.guild_config_service import GuildConfigService
 from services.memory_service import MemoryService
 from services.music_service import MusicService
+from services.conversation_memory_service import ConversationMemoryService
+
+
+def _image_urls(attachments) -> list[str]:
+    return [
+        att.url
+        for att in attachments
+        if getattr(att, "content_type", None)
+        and att.content_type.startswith("image/")
+    ]
 
 
 class ContextBuilder:
@@ -13,11 +23,19 @@ class ContextBuilder:
         music_service: MusicService | None = None,
         guild_config: GuildConfigService | None = None,
         memory_service: MemoryService | None = None,
+        conversation_memory: ConversationMemoryService | None = None,
     ) -> None:
         self._client = client
         self._music = music_service
         self._guild_config = guild_config
         self._memory = memory_service
+        self._conversation_memory = conversation_memory
+
+    def collect_image_urls(self, request: BotRequest) -> list[str]:
+        """요청 첨부의 이미지 URL을 모은다.
+        답글 대상 첨부는 events._include_referenced_attachments가
+        이미 request.attachments에 합쳐둔다."""
+        return _image_urls(request.attachments)
 
     async def build(self, request: BotRequest) -> dict:
         guild = self._client.get_guild(request.guild_id)
@@ -84,6 +102,12 @@ class ContextBuilder:
             user_memories = await self._memory.list("user", request.user_id)
             guild_memories = await self._memory.list("guild", request.guild_id)
 
+        recent_observations: list[dict] = []
+        if self._conversation_memory:
+            recent_observations = self._conversation_memory.list_recent(
+                request.channel_id
+            )
+
         return {
             "guild": guild_ctx,
             "user": user_ctx,
@@ -97,4 +121,5 @@ class ContextBuilder:
                 "user": user_memories,
                 "guild": guild_memories,
             },
+            "recent_observations": recent_observations,
         }

@@ -64,7 +64,16 @@ class RespondTextTool(BaseTool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "message": {"type": "string"}
+                        "message": {"type": "string"},
+                        "image_notes": {
+                            "type": "string",
+                            "description": (
+                                "이미지가 첨부된 대화일 때만 채운다. 이미지에 보이는 것을 "
+                                "객관적으로 빠짐없이 기록한다(텍스트·숫자·사물·인물·맥락). "
+                                "사용자에게는 보이지 않고, 나중에 그 이미지에 대한 후속 질문에 "
+                                "참고하려고 저장된다. 이미지가 없으면 비워둔다."
+                            ),
+                        },
                     },
                     "required": ["message"],
                 },
@@ -76,4 +85,8 @@ class RespondTextTool(BaseTool):
         if not message:
             # message 누락 시 크래시 대신 루프 계속 → LLM이 다시 제대로 호출
             return {"ok": False, "error": "message 인자가 비어있어. message를 채워서 다시 호출해."}
-        return {"ok": True, "message": message}
+        result = {"ok": True, "message": message}
+        image_notes = (args.get("image_notes") or "").strip()
+        if image_notes:
+            result["image_notes"] = image_notes
+        return result
