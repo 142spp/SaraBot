@@ -115,7 +115,7 @@ class GenerateImageTool(BaseTool):
             return {"ok": False, "error": "이미지 생성에 실패했어. 잠깐 뒤에 다시 해줘."}
 
         self._record(request.user_id)
-        file = discord.File(io.BytesIO(data), filename="sachiko.png")
+        file = discord.File(io.BytesIO(data), filename="sara.png")
         await channel.send(file=file)
         logger.info(
             f"generate_image → #{getattr(channel, 'name', '?')}: {prompt[:60]!r}"

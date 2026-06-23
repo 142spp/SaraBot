@@ -122,7 +122,7 @@ async def main() -> None:
         )
 
     try:
-        logger.info("Starting Sachiko bot...")
+        logger.info("Starting Sara bot...")
         await client.start(config.DISCORD_TOKEN)
     finally:
         await close_pool()
