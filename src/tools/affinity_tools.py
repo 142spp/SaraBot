@@ -54,9 +54,5 @@ class AdjustAffinityTool(BaseTool):
         new_score = await self._affinity.adjust(
             request.guild_id, request.user_id, delta
         )
-        return {
-            "ok": True,
-            "delta": delta,
-            "score": new_score,
-            "band": affinity_band(new_score),
-        }
+        # 점수는 반환하지 않는다 — 봇이 숫자를 사용자에게 흘리지 못하게.
+        return {"ok": True, "band": affinity_band(new_score)}

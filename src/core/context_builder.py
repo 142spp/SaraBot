@@ -62,8 +62,9 @@ class ContextBuilder:
             "voice_channel": None,
         }
         if self._affinity:
+            # 숫자(score)는 일부러 빼고 구간(band)만 노출 — 봇이 점수를 못 까게.
             score = await self._affinity.get(request.guild_id, request.user_id)
-            user_ctx["affinity"] = {"score": score, "band": affinity_band(score)}
+            user_ctx["attitude"] = affinity_band(score)
         if request.user_voice_channel_id and guild:
             vc = guild.get_channel(request.user_voice_channel_id)
             user_ctx["voice_channel"] = {
