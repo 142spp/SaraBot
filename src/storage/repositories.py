@@ -289,3 +289,34 @@ class GuildConfigRepository:
             """,
             guild_id, persona,
         )
+
+
+DEFAULT_AFFINITY = 50
+MIN_AFFINITY = 0
+MAX_AFFINITY = 100
+
+
+class AffinityRepository:
+    async def get(self, guild_id: int, user_id: int) -> int:
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT score FROM user_affinity WHERE guild_id=$1 AND user_id=$2",
+            guild_id, user_id,
+        )
+        return row["score"] if row else DEFAULT_AFFINITY
+
+    async def adjust(self, guild_id: int, user_id: int, delta: int) -> int:
+        """delta만큼 호감도를 올리고(내리고) 0~100으로 clamp한 새 값을 반환."""
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            """
+            INSERT INTO user_affinity (guild_id, user_id, score, updated_at)
+            VALUES ($1, $2, LEAST($4::int, GREATEST($3::int, $5::int + $6::int)), NOW())
+            ON CONFLICT (guild_id, user_id) DO UPDATE
+                SET score = LEAST($4::int, GREATEST($3::int, user_affinity.score + $6::int)),
+                    updated_at = NOW()
+            RETURNING score
+            """,
+            guild_id, user_id, MIN_AFFINITY, MAX_AFFINITY, DEFAULT_AFFINITY, delta,
+        )
+        return row["score"]

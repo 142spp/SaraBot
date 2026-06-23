@@ -1,6 +1,7 @@
 import discord
 
 from discord_adapter.message_parser import BotRequest
+from services.affinity_service import AffinityService, affinity_band
 from services.guild_config_service import GuildConfigService
 from services.memory_service import MemoryService
 from services.music_service import MusicService
@@ -24,12 +25,14 @@ class ContextBuilder:
         guild_config: GuildConfigService | None = None,
         memory_service: MemoryService | None = None,
         conversation_memory: ConversationMemoryService | None = None,
+        affinity_service: AffinityService | None = None,
     ) -> None:
         self._client = client
         self._music = music_service
         self._guild_config = guild_config
         self._memory = memory_service
         self._conversation_memory = conversation_memory
+        self._affinity = affinity_service
 
     def collect_image_urls(self, request: BotRequest) -> list[str]:
         """요청 첨부의 이미지 URL을 모은다.
@@ -58,6 +61,9 @@ class ContextBuilder:
             "is_admin": request.is_admin,
             "voice_channel": None,
         }
+        if self._affinity:
+            score = await self._affinity.get(request.guild_id, request.user_id)
+            user_ctx["affinity"] = {"score": score, "band": affinity_band(score)}
         if request.user_voice_channel_id and guild:
             vc = guild.get_channel(request.user_voice_channel_id)
             user_ctx["voice_channel"] = {

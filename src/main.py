@@ -14,6 +14,7 @@ from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
 from discord_adapter.events import register_events
 from scheduler import setup_daily_recall
+from services.affinity_service import AffinityService
 from services.guild_config_service import GuildConfigService
 from services.conversation_memory_service import ConversationMemoryService
 from services.embedding_service import EmbeddingService
@@ -31,6 +32,7 @@ from tools.archive_tools import (
     RecallThisDayTool,
     SearchChatHistoryTool,
 )
+from tools.affinity_tools import AdjustAffinityTool
 from tools.chat_tools import RespondTextTool, SayTool
 from tools.help_tools import ShowHelpTool
 from tools.image_tools import GenerateImageTool
@@ -65,6 +67,7 @@ async def main() -> None:
     music_service = MusicService(client)
     memory_service = MemoryService()
     conversation_memory = ConversationMemoryService()
+    affinity_service = AffinityService()
     embedding_service = EmbeddingService()
     image_service = ImageService()
     llm_service = LLMService()
@@ -93,6 +96,7 @@ async def main() -> None:
         RecallThisDayTool(archive_service),
         RunSqlTool(),
         WebSearchTool(web_search_service),
+        AdjustAffinityTool(affinity_service),
     ])
 
     context_builder = ContextBuilder(
@@ -101,6 +105,7 @@ async def main() -> None:
         guild_config,
         memory_service,
         conversation_memory,
+        affinity_service,
     )
     agent = Agent(
         context_builder,

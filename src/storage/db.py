@@ -61,6 +61,14 @@ async def init_schema() -> None:
                 updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS user_affinity (
+                guild_id    BIGINT NOT NULL,
+                user_id     BIGINT NOT NULL,
+                score       INT NOT NULL DEFAULT 50,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (guild_id, user_id)
+            );
+
             CREATE TABLE IF NOT EXISTS messages (
                 message_id  BIGINT PRIMARY KEY,
                 channel_id  BIGINT NOT NULL,
