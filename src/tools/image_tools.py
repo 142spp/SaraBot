@@ -10,6 +10,16 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 DAILY_LIMIT = 20  # 유저당 하루 생성 횟수
+MAX_INPUT_IMAGES = 4  # 편집 시 입력 이미지 최대 개수
+
+
+def _image_attachments(attachments) -> list:
+    return [
+        a
+        for a in attachments
+        if getattr(a, "content_type", None)
+        and a.content_type.startswith("image/")
+    ]
 
 
 class GenerateImageTool(BaseTool):
@@ -29,8 +39,10 @@ class GenerateImageTool(BaseTool):
             "function": {
                 "name": "generate_image",
                 "description": (
-                    "프롬프트로 이미지를 생성해서 채널에 바로 올린다. "
+                    "이미지를 생성해서 채널에 바로 올린다. "
                     "사용자가 그림/이미지를 그려달라고 할 때 사용. "
+                    "첨부된 이미지가 있으면 그 이미지를 바탕으로 편집/변형하고, "
+                    "없으면 프롬프트로 새로 그린다. "
                     "생성에 시간이 걸리니 호출 전에 say로 먼저 알리고, "
                     "생성 후 respond_text로 마무리한다."
                 ),
@@ -79,7 +91,26 @@ class GenerateImageTool(BaseTool):
         if not channel or not hasattr(channel, "send"):
             return {"ok": False, "error": "CHANNEL_NOT_ACCESSIBLE"}
 
-        data = await self._image.generate(prompt)
+        # 첨부 이미지가 있으면 편집(image-to-image), 없으면 새로 생성
+        image_atts = _image_attachments(request.attachments)[:MAX_INPUT_IMAGES]
+        if image_atts:
+            files: list[tuple] = []
+            for a in image_atts:
+                try:
+                    raw = await a.read()
+                except Exception as e:
+                    logger.warning(f"attachment read failed: {e}")
+                    continue
+                files.append(
+                    (a.filename or "image.png", raw, a.content_type or "image/png")
+                )
+            if not files:
+                return {"ok": False, "error": "첨부 이미지를 읽지 못했어. 다시 올려줘."}
+            logger.info(f"generate_image | edit mode, {len(files)} input image(s)")
+            data = await self._image.edit(prompt, files)
+        else:
+            data = await self._image.generate(prompt)
+
         if not data:
             return {"ok": False, "error": "이미지 생성에 실패했어. 잠깐 뒤에 다시 해줘."}
 
