@@ -25,6 +25,7 @@ from services.message_archive_service import MessageArchiveService
 from services.music_service import MusicService
 from services.voice_service import VoiceService
 from services.web_search_service import WebSearchService
+from services.youtube_service import YouTubeService
 from storage.db import close_pool, init_schema
 from tools.archive_tools import (
     AnalyzeUserTool,
@@ -41,6 +42,7 @@ from tools.music_tools import PlayMusicTool, SearchMusicTool, ShowQueueTool, Ski
 from tools.sql_tools import RunSqlTool
 from tools.summary_tools import SummarizeRecentChatTool
 from tools.web_tools import WebSearchTool
+from tools.youtube_tools import SummarizeYoutubeTool
 from tools.voice_tools import GetUserVoiceChannelTool, JoinVoiceTool, LeaveVoiceTool
 from utils.logger import get_logger
 
@@ -73,6 +75,7 @@ async def main() -> None:
     llm_service = LLMService()
     archive_service = MessageArchiveService(client, embedding_service, llm_service)
     web_search_service = WebSearchService()
+    youtube_service = YouTubeService(llm_service)
     guild_config = GuildConfigService()
     policy = PolicyLayer(client)
     tool_executor = ToolExecutor([
@@ -96,6 +99,7 @@ async def main() -> None:
         RecallThisDayTool(archive_service),
         RunSqlTool(),
         WebSearchTool(web_search_service),
+        SummarizeYoutubeTool(youtube_service),
         AdjustAffinityTool(affinity_service),
     ])
 
