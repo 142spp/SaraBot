@@ -40,6 +40,7 @@ class WebSearchService:
             {
                 "title": r.get("title"),
                 "url": r.get("url"),
+                "published_date": r.get("published_date"),
                 "content": (r.get("content") or "")[:MAX_CONTENT_CHARS],
             }
             for r in data.get("results", [])

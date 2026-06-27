@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 from core.context_builder import ContextBuilder
 from core.policy import PolicyLayer
@@ -12,6 +13,15 @@ logger = get_logger(__name__)
 
 MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
+
+KST = timezone(timedelta(hours=9))
+_KO_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
+
+
+def _now_stamp() -> str:
+    now = datetime.now(KST)
+    wd = _KO_WEEKDAYS[now.weekday()]
+    return f"{now:%Y년 %m월 %d일} ({wd}) {now:%H:%M} KST"
 
 
 class Agent:
@@ -60,6 +70,7 @@ class Agent:
         # 과거 턴이 아니라 마지막 현재 턴에만 붙인다.
         context_str = json.dumps(context, ensure_ascii=False, indent=2)
         text_block = (
+            f"[지금 시각] {_now_stamp()}\n\n"
             f"[현재 상태]\n{context_str}\n\n"
             f"[사용자 요청]\n[{request.display_name}] {request.clean_content or '(내용 없음)'}"
         )
