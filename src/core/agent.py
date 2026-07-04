@@ -18,6 +18,7 @@ TERMINAL_TOOLS = {"respond_text"}
 EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
 EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
 MAX_EVIDENCE_QUOTE_CHARS = 500
+MAX_EMBED_FIELD_VALUE_CHARS = 900
 EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
@@ -51,29 +52,44 @@ def _evidence_ref_label(item: dict) -> str:
     return "근거"
 
 
-def _format_inline_evidence(item: dict) -> str:
+def _format_evidence_marker(item: dict) -> str:
+    return f"[{_evidence_ref_label(item)}]"
+
+
+def _format_evidence_field(item: dict) -> dict | None:
     ref_label = _evidence_ref_label(item)
     label = _sanitize_evidence_text(str(item.get("label") or ""))
     url = str(item.get("url") or "").strip()
     if item.get("kind") == "web" and item.get("published_date"):
         label = f"{label}, {item['published_date']}"
 
-    title = f"{ref_label} | {label}" if label else ref_label
-    lines = [title]
+    name = f"{ref_label} · {label}" if label else ref_label
+    if len(name) > 256:
+        name = name[:255].rstrip() + "…"
+
+    lines: list[str] = []
     quote = _clip_evidence_text(str(item.get("quote") or ""))
     if quote:
         lines.append(quote)
     if url:
-        lines.append(url)
-    return "\n```text\n" + "\n".join(lines) + "\n```\n"
+        lines.append(f"[원문 보기]({url})")
+
+    if not lines:
+        return None
+
+    value = "\n".join(lines)
+    if len(value) > MAX_EMBED_FIELD_VALUE_CHARS:
+        value = value[: MAX_EMBED_FIELD_VALUE_CHARS - 1].rstrip() + "…"
+    return {"name": name, "value": value, "inline": False}
 
 
 def _replace_evidence_placeholders(
     message: str,
     evidence_items: list[dict],
-) -> str:
+) -> tuple[str, list[dict]]:
+    used_ids: set[str] = set()
     replacements = {
-        f"{{{{{item['id']}}}}}": _format_inline_evidence(item)
+        f"{{{{{item['id']}}}}}": _format_evidence_marker(item)
         for item in evidence_items
         if item.get("id")
     }
@@ -81,17 +97,24 @@ def _replace_evidence_placeholders(
         if token not in message:
             continue
         item_id = token[2:-2]
-        ref_text = f"({_evidence_ref_label({'id': item_id})})"
-        message = message.replace(token, replacement, 1)
-        message = message.replace(token, ref_text)
+        used_ids.add(item_id)
+        message = message.replace(token, replacement)
 
     if EVIDENCE_PLACEHOLDER_RE.search(message):
         logger.warning("Unknown evidence placeholder in final response")
         message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
 
-    message = re.sub(r"(```)\n[ \t]*[.。]", r"\1", message)
+    fields = [
+        field
+        for item in evidence_items
+        if item.get("id") in used_ids
+        for field in [_format_evidence_field(item)]
+        if field
+    ]
+    embeds = [{"title": "검색 근거", "fields": fields}] if fields else []
+
     message = re.sub(r" +([,.!?])", r"\1", message)
-    return re.sub(r" {2,}", " ", message).strip()
+    return re.sub(r" {2,}", " ", message).strip(), embeds
 
 
 def _redact_search_result_for_llm(result: dict) -> dict:
@@ -253,7 +276,7 @@ class Agent:
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
                     raw_msg = result.get("message", "")
                     before_placeholders = len(EVIDENCE_PLACEHOLDER_RE.findall(raw_msg))
-                    msg = _replace_evidence_placeholders(
+                    msg, embeds = _replace_evidence_placeholders(
                         raw_msg,
                         pending_evidence_items,
                     )
@@ -263,7 +286,8 @@ class Agent:
                         logger.info(
                             "Evidence placeholders processed | "
                             f"before={before_placeholders} after={after_placeholders} "
-                            f"items={len(pending_evidence_items)} preview={preview!r}"
+                            f"items={len(pending_evidence_items)} "
+                            f"embeds={len(embeds)} preview={preview!r}"
                         )
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
@@ -279,7 +303,7 @@ class Agent:
                             )
                             logger.info("Image analysis stored")
                     logger.info(f"Agent done | terminal tool={tool_name}")
-                    return BotResponse(msg)
+                    return BotResponse(msg, embeds=embeds)
 
         logger.warning(f"Agent step limit reached ({MAX_AGENT_STEPS})")
         return BotResponse("요청을 처리하다가 단계가 너무 길어져서 중단했어.")

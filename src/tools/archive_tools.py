@@ -92,7 +92,7 @@ class SearchChatHistoryTool(BaseTool):
                     "상위 근거는 evidence_items로 함께 돌려준다. "
                     "respond_text에서는 evidence_items의 id를 {{E1}}처럼 답변 본문 안에 "
                     "자연스럽게 섞어라. 실제 링크·작성자·시간·인용문은 "
-                    "시스템이 코드블럭 마크다운 근거로 치환한다. "
+                    "시스템이 하단 검색 근거 embed로 치환한다. "
                     "별도의 하단 근거 섹션으로 몰아넣지 마라. "
                     "검색 결과에 없는 placeholder는 만들지 마라. "
                     "query에는 검색 대상인 고유명사·작품명·사람명·음식명·핵심 명사만 넣어라. "

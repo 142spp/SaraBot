@@ -8,6 +8,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 DISCORD_LIMIT = 2000
+EMBED_FIELD_LIMIT = 25
 
 
 def _split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
@@ -31,9 +32,36 @@ def _split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
     return chunks or [text]
 
 
-async def _reply_chunked(message: discord.Message, text: str) -> None:
+def _build_discord_embeds(specs: list[dict]) -> list[discord.Embed]:
+    embeds: list[discord.Embed] = []
+    for spec in specs:
+        embed = discord.Embed(
+            title=spec.get("title"),
+            description=spec.get("description"),
+            color=discord.Color.blurple(),
+        )
+        for field in spec.get("fields", [])[:EMBED_FIELD_LIMIT]:
+            embed.add_field(
+                name=field.get("name") or "근거",
+                value=field.get("value") or "-",
+                inline=bool(field.get("inline", False)),
+            )
+        embeds.append(embed)
+    return embeds
+
+
+async def _reply_chunked(
+    message: discord.Message,
+    text: str,
+    embeds: list[discord.Embed] | None = None,
+) -> None:
     parts = _split_message(text)
-    await message.reply(parts[0], suppress_embeds=True)
+    reply_embeds = embeds or []
+    await message.reply(
+        parts[0],
+        embeds=reply_embeds,
+        suppress_embeds=not reply_embeds,
+    )
     for part in parts[1:]:
         await message.channel.send(part, suppress_embeds=True)
 
@@ -96,7 +124,11 @@ def register_events(client: discord.Client, bot_core: BotCore) -> None:
                 if response.message:
                     preview = response.message[:500].replace("\n", " ")
                     logger.info(f"→ #{channel_name}: {preview!r}")
-                    await _reply_chunked(message, response.message)
+                    await _reply_chunked(
+                        message,
+                        response.message,
+                        embeds=_build_discord_embeds(response.embeds),
+                    )
                 else:
                     logger.warning(f"Empty response for message {message.id}")
             except Exception as e:
