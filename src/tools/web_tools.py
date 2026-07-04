@@ -23,6 +23,8 @@ class WebSearchTool(BaseTool):
                     "모르는 사람/용어/제품 등 채팅 기록 밖의 정보가 필요할 때 사용. "
                     "상위 출처는 evidence_markdown으로 함께 돌려준다. "
                     "respond_text에서는 핵심 답변만 말해라. 근거 마크다운은 시스템이 자동으로 붙인다. "
+                    "본문에서 출처를 연결해야 하면 [근거 1], [근거 2]처럼 번호만 인용해라. "
+                    "URL과 인용문은 직접 복붙하지 마라. "
                     "(서버 채팅 기록 검색은 search_chat_history를 쓴다.)"
                 ),
                 "parameters": {
