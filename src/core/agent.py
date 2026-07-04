@@ -113,7 +113,9 @@ def _replace_evidence_placeholders(
         logger.warning("Unknown evidence placeholder in final response")
         message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
 
-    field_items = evidence_items if used_ids else []
+    field_items = [
+        item for item in evidence_items if str(item.get("id") or "") in used_ids
+    ]
     fields = [
         field
         for item in field_items
@@ -296,6 +298,7 @@ class Agent:
                             "Evidence placeholders processed | "
                             f"before={before_placeholders} after={after_placeholders} "
                             f"items={len(pending_evidence_items)} "
+                            f"fields={sum(len(embed.get('fields', [])) for embed in embeds)} "
                             f"embeds={len(embeds)} preview={preview!r}"
                         )
                     if self._conversation_memory:
