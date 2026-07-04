@@ -170,6 +170,71 @@ class MessageRepository:
             for r in rows
         ]
 
+    async def expand_message_context(
+        self,
+        matches: list[dict],
+        before: int = 2,
+        after: int = 2,
+        before_message_id: int | None = None,
+    ) -> list[dict]:
+        """개별 메시지 검색 결과마다 같은 채널의 앞뒤 메시지를 붙인다."""
+        if not matches:
+            return []
+
+        pool = await get_pool()
+        expanded: list[dict] = []
+        async with pool.acquire() as conn:
+            for match in matches:
+                before_rows = await conn.fetch(
+                    """
+                    SELECT message_id, author_name, content, created_at
+                    FROM messages
+                    WHERE guild_id=$1
+                      AND channel_id=$2
+                      AND message_id < $3
+                      AND is_bot = FALSE
+                    ORDER BY message_id DESC
+                    LIMIT $4
+                    """,
+                    match["guild_id"],
+                    match["channel_id"],
+                    match["message_id"],
+                    before,
+                )
+                after_rows = await conn.fetch(
+                    """
+                    SELECT message_id, author_name, content, created_at
+                    FROM messages
+                    WHERE guild_id=$1
+                      AND channel_id=$2
+                      AND message_id > $3
+                      AND is_bot = FALSE
+                      AND ($5::bigint IS NULL OR message_id < $5)
+                    ORDER BY message_id ASC
+                    LIMIT $4
+                    """,
+                    match["guild_id"],
+                    match["channel_id"],
+                    match["message_id"],
+                    after,
+                    before_message_id,
+                )
+                rows = list(reversed(before_rows)) + [
+                    {
+                        "message_id": match["message_id"],
+                        "author_name": match["author"],
+                        "content": match.get("content") or "",
+                        "created_at": match["created_at"],
+                    }
+                ] + list(after_rows)
+                lines = [
+                    f'{row["author_name"]}: {(row["content"] or "").strip()}'
+                    for row in rows
+                    if (row["content"] or "").strip()
+                ]
+                expanded.append({**match, "context_content": "\n".join(lines)})
+        return expanded
+
 
     async def sample_by_author(
         self, guild_id: int, author: str, recent: int = 50, even: int = 250

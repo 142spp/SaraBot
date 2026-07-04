@@ -115,7 +115,10 @@ class MessageArchiveService:
 
     @staticmethod
     def _evidence_preview(item: dict, terms: list[str]) -> str:
-        text = (item.get("content") or item.get("context_content") or "").strip()
+        if item.get("context_content"):
+            return item["context_content"].strip()
+
+        text = (item.get("content") or "").strip()
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not lines or not terms:
             return text
@@ -172,8 +175,8 @@ class MessageArchiveService:
         raw_text = MessageArchiveService._evidence_preview(item, terms or [])
         quote = MessageArchiveService._clip_embed_text(
             raw_text,
-            max_chars=160,
-            max_lines=2,
+            max_chars=600,
+            max_lines=5,
         )
         return {
             "id": f"E{index}",
@@ -292,7 +295,7 @@ class MessageArchiveService:
             return []
         if not terms and not author:
             return []
-        return await self._repo.search(
+        matches = await self._repo.search(
             guild_id,
             terms,
             author,
@@ -301,6 +304,12 @@ class MessageArchiveService:
             exclude_mention_user_id=exclude_mention_user_id,
             date_from=date_from,
             date_to=date_to,
+        )
+        return await self._repo.expand_message_context(
+            matches,
+            before=2,
+            after=2,
+            before_message_id=before_message_id,
         )
 
     async def keyword_chunk_search(
