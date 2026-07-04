@@ -4,6 +4,10 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _discord_message_url(guild_id: int, channel_id: int, message_id: int) -> str:
+    return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+
+
 class MemoryRepository:
     async def save(self, scope: str, scope_id: int, content: str) -> int:
         pool = await get_pool()
@@ -115,7 +119,8 @@ class MessageRepository:
         params.append(limit)
         score_sql = " + ".join(score_parts) if score_parts else "0"
         sql = (
-            f"SELECT author_name, content, is_bot, created_at, ({score_sql}) AS keyword_score "
+            "SELECT message_id, channel_id, guild_id, author_name, content, "
+            f"is_bot, created_at, ({score_sql}) AS keyword_score "
             "FROM messages "
             f"WHERE {' AND '.join(conditions)} "
             f"ORDER BY keyword_score DESC, created_at DESC LIMIT ${len(params)}"
@@ -123,11 +128,17 @@ class MessageRepository:
         rows = await pool.fetch(sql, *params)
         return [
             {
+                "message_id": r["message_id"],
+                "channel_id": r["channel_id"],
+                "guild_id": r["guild_id"],
                 "author": r["author_name"],
                 "is_bot": r["is_bot"],
                 "content": r["content"],
                 "created_at": r["created_at"].isoformat(),
                 "keyword_score": r["keyword_score"],
+                "source_url": _discord_message_url(
+                    r["guild_id"], r["channel_id"], r["message_id"]
+                ),
             }
             for r in rows
         ]
@@ -257,6 +268,7 @@ class ChunkRepository:
             {
                 "id": r["id"],
                 "channel_id": r["channel_id"],
+                "guild_id": guild_id,
                 "start_msg_id": r["start_msg_id"],
                 "end_msg_id": r["end_msg_id"],
                 "authors": r["authors"],
@@ -264,6 +276,12 @@ class ChunkRepository:
                 "start_at": r["start_at"].isoformat(),
                 "end_at": r["end_at"].isoformat(),
                 "keyword_score": r["keyword_score"],
+                "source_url": _discord_message_url(
+                    guild_id, r["channel_id"], r["start_msg_id"]
+                ),
+                "end_source_url": _discord_message_url(
+                    guild_id, r["channel_id"], r["end_msg_id"]
+                ),
             }
             for r in rows
         ]
@@ -349,6 +367,7 @@ class ChunkRepository:
             {
                 "id": r["id"],
                 "channel_id": r["channel_id"],
+                "guild_id": guild_id,
                 "start_msg_id": r["start_msg_id"],
                 "end_msg_id": r["end_msg_id"],
                 "authors": r["authors"],
@@ -356,6 +375,12 @@ class ChunkRepository:
                 "start_at": r["start_at"].isoformat(),
                 "end_at": r["end_at"].isoformat(),
                 "distance": round(r["distance"], 4),
+                "source_url": _discord_message_url(
+                    guild_id, r["channel_id"], r["start_msg_id"]
+                ),
+                "end_source_url": _discord_message_url(
+                    guild_id, r["channel_id"], r["end_msg_id"]
+                ),
             }
             for r in rows
         ]
@@ -378,7 +403,8 @@ class ChunkRepository:
             for match in matches:
                 before_rows = await conn.fetch(
                     """
-                    SELECT id, authors, content, start_at, end_at
+                    SELECT id, channel_id, start_msg_id, end_msg_id,
+                           authors, content, start_at, end_at
                     FROM message_chunks
                     WHERE guild_id=$1 AND channel_id=$2 AND end_msg_id < $3
                     ORDER BY end_msg_id DESC
@@ -391,7 +417,8 @@ class ChunkRepository:
                 )
                 after_rows = await conn.fetch(
                     """
-                    SELECT id, authors, content, start_at, end_at
+                    SELECT id, channel_id, start_msg_id, end_msg_id,
+                           authors, content, start_at, end_at
                     FROM message_chunks
                     WHERE guild_id=$1 AND channel_id=$2 AND start_msg_id > $3
                     ORDER BY start_msg_id ASC
@@ -405,8 +432,25 @@ class ChunkRepository:
                 chunks = list(reversed(before_rows)) + [match] + list(after_rows)
                 context_parts: list[str] = []
                 context_ids: list[int] = []
+                context_sources: list[dict] = []
                 for chunk in chunks:
                     context_ids.append(chunk["id"])
+                    context_sources.append(
+                        {
+                            "chunk_id": chunk["id"],
+                            "start_at": chunk["start_at"].isoformat()
+                            if hasattr(chunk["start_at"], "isoformat")
+                            else chunk["start_at"],
+                            "end_at": chunk["end_at"].isoformat()
+                            if hasattr(chunk["end_at"], "isoformat")
+                            else chunk["end_at"],
+                            "source_url": _discord_message_url(
+                                guild_id,
+                                chunk["channel_id"],
+                                chunk["start_msg_id"],
+                            ),
+                        }
+                    )
                     text = (chunk["content"] or "").strip()
                     if text:
                         context_parts.append(text)
@@ -414,6 +458,7 @@ class ChunkRepository:
                 item = {
                     **match,
                     "context_chunk_ids": context_ids,
+                    "context_sources": context_sources,
                     "context_content": context[:max_chars],
                 }
                 expanded.append(item)

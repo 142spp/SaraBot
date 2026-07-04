@@ -57,6 +57,8 @@ class SearchChatHistoryTool(BaseTool):
                     "keyword_matches(핵심 단어가 들어간 개별 메시지), "
                     "hybrid_matches(키워드 검색과 의미 검색을 합쳐 재정렬한 대화 덩어리). "
                     "둘 다 참고해서 답해라. 돌려 말한 질문도 hybrid_matches가 관련 대화를 찾아준다. "
+                    "검색 결과의 source_url/context_sources는 원본 Discord 메시지 근거다. "
+                    "과거 대화를 근거로 답할 때는 관련 source_url을 함께 제시해라. "
                     "query에는 핵심 키워드나 주제를 넣어라. "
                     "특정 사람에 대한 질문('A는 뭘 좋아해?', 'A가 한 말')이면 author에 그 사람 이름을 넣어라. "
                     "결과의 시간(created_at/start_at)으로 '언제' 질문에 답할 수 있다. "
