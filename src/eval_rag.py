@@ -4,7 +4,7 @@ This script builds or reuses a local cache of synthetic search questions.
 The cache stores only target chunk ids and generated questions, not chat content.
 
 Usage:
-    PYTHONPATH=src .venv/bin/python src/eval_rag.py --samples 24
+    PYTHONPATH=src .venv/bin/python src/eval_rag.py
 """
 
 from __future__ import annotations
@@ -240,7 +240,7 @@ async def evaluate(cases: list[dict]) -> dict:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
-    parser.add_argument("--samples", type=int, default=24)
+    parser.add_argument("--samples", type=int, default=100)
     parser.add_argument("--seed", default="sachikobot-rag-v1")
     parser.add_argument("--min-chars", type=int, default=180)
     parser.add_argument("--max-chars", type=int, default=900)

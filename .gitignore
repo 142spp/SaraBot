@@ -5,4 +5,4 @@ __pycache__/
 .venv/
 venv/
 logs/
-.rag_eval_cases.json
+.rag_eval_cases*.json
