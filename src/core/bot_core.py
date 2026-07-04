@@ -1,3 +1,4 @@
+from core.bot_response import BotResponse
 from core.agent import Agent
 from discord_adapter.message_parser import BotRequest
 from utils.logger import get_logger
@@ -9,7 +10,7 @@ class BotCore:
     def __init__(self, agent: Agent) -> None:
         self._agent = agent
 
-    async def handle(self, request: BotRequest) -> str:
+    async def handle(self, request: BotRequest) -> BotResponse:
         logger.info(
             f"[{request.guild_id}] {request.display_name}: {request.clean_content!r}"
         )

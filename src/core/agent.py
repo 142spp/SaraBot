@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+from core.bot_response import BotResponse
 from core.context_builder import ContextBuilder
 from core.policy import PolicyLayer
 from core.tool_executor import ToolExecutor
@@ -57,7 +58,7 @@ class Agent:
                 turns.append({"role": "user", "content": f"[{author}] {text}"})
         return turns
 
-    async def run(self, request: BotRequest) -> str:
+    async def run(self, request: BotRequest) -> BotResponse:
         context = await self._context_builder.build(request)
         logger.debug(f"Context built | {json.dumps(context, ensure_ascii=False)}")
 
@@ -90,6 +91,7 @@ class Agent:
             {"role": "user", "content": user_content}
         ]
         tools = self._executor.get_definitions()
+        pending_embeds: list[dict] = []
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             logger.info(f"Agent step {step}/{MAX_AGENT_STEPS}")
@@ -97,7 +99,7 @@ class Agent:
 
             if not response.tool_calls:
                 logger.info("Agent done | direct response (no tool calls)")
-                return response.content or "..."
+                return BotResponse(response.content or "...")
 
 
             messages.append(
@@ -138,6 +140,8 @@ class Agent:
                     self._conversation_memory.add_tool_result(
                         request.channel_id, tool_name, args, result
                     )
+                if result.get("evidence_embeds"):
+                    pending_embeds = result["evidence_embeds"]
 
                 messages.append(
                     {
@@ -149,6 +153,7 @@ class Agent:
 
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
                     msg = result.get("message", "")
+                    embeds = result.get("embeds") or pending_embeds
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
                             request.channel_id,
@@ -163,7 +168,7 @@ class Agent:
                             )
                             logger.info("Image analysis stored")
                     logger.info(f"Agent done | terminal tool={tool_name}")
-                    return msg
+                    return BotResponse(msg, embeds=embeds)
 
         logger.warning(f"Agent step limit reached ({MAX_AGENT_STEPS})")
-        return "요청을 처리하다가 단계가 너무 길어져서 중단했어."
+        return BotResponse("요청을 처리하다가 단계가 너무 길어져서 중단했어.")

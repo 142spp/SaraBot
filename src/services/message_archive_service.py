@@ -119,9 +119,9 @@ class MessageArchiveService:
         return "\n".join(picked) if picked else text
 
     @staticmethod
-    def _search_evidence_embed(
+    def _search_evidence_payload(
         item: dict, index: int, terms: list[str] | None = None
-    ) -> discord.Embed:
+    ) -> dict:
         source_url = item.get("source_url")
         title = f"검색 근거 {index}"
         if item.get("start_at"):
@@ -130,34 +130,33 @@ class MessageArchiveService:
             title += f" · {item['created_at'][:10]}"
 
         raw_text = MessageArchiveService._evidence_preview(item, terms or [])
-        embed = discord.Embed(
-            title=title,
-            url=source_url,
-            description=MessageArchiveService._clip_embed_text(raw_text),
-            color=discord.Color.blurple(),
-        )
+        payload = {
+            "title": title,
+            "url": source_url,
+            "description": MessageArchiveService._clip_embed_text(raw_text),
+            "fields": [],
+        }
         authors = item.get("authors") or item.get("author")
         if authors:
-            embed.add_field(name="작성자", value=str(authors)[:1024], inline=False)
+            payload["fields"].append(
+                {"name": "작성자", "value": str(authors)[:1024], "inline": False}
+            )
         if source_url:
-            embed.add_field(name="원문", value=f"[메시지로 이동]({source_url})", inline=False)
+            payload["fields"].append(
+                {"name": "원문", "value": f"[메시지로 이동]({source_url})", "inline": False}
+            )
         if item.get("retrieval_sources"):
-            embed.set_footer(text=f"검색 방식: {', '.join(item['retrieval_sources'])}")
-        return embed
+            payload["footer"] = f"검색 방식: {', '.join(item['retrieval_sources'])}"
+        return payload
 
-    async def send_search_evidence_embeds(
+    def build_search_evidence_embeds(
         self,
-        channel_id: int,
         keyword_matches: list[dict],
         hybrid_matches: list[dict],
         query: str = "",
         limit: int = 3,
-    ) -> int:
-        """검색 상위 근거를 Discord embed로 보여준다."""
-        channel = self._client.get_channel(channel_id)
-        if not channel or not hasattr(channel, "send"):
-            return 0
-
+    ) -> list[dict]:
+        """검색 상위 근거를 최종 응답에 붙일 embed payload로 만든다."""
         selected: list[dict] = []
         seen_urls: set[str] = set()
         for item in hybrid_matches + keyword_matches:
@@ -170,9 +169,10 @@ class MessageArchiveService:
                 break
 
         terms = extract_search_terms(query)
-        for index, item in enumerate(selected, start=1):
-            await channel.send(embed=self._search_evidence_embed(item, index, terms))
-        return len(selected)
+        return [
+            self._search_evidence_payload(item, index, terms)
+            for index, item in enumerate(selected, start=1)
+        ]
 
     async def ingest_channel(self, channel_id: int, notify: bool = True) -> dict:
         """현재 채널의 전체 기록을 DB에 적재한다. 이미 저장분이 있으면 그 이후만(증분).
