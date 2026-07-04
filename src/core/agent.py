@@ -17,7 +17,7 @@ MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
 EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
 EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
-MAX_INLINE_EVIDENCE_QUOTE_CHARS = 120
+MAX_INLINE_EVIDENCE_QUOTE_CHARS = 80
 EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
@@ -37,21 +37,32 @@ def _clip_inline_evidence_quote(text: str) -> str:
     return text[: MAX_INLINE_EVIDENCE_QUOTE_CHARS - 1].rstrip() + "…"
 
 
+def _sanitize_markdown_label(text: str) -> str:
+    text = " ".join((text or "근거").split())
+    return text.replace("[", "").replace("]", "")
+
+
 def _format_inline_evidence(item: dict) -> str:
-    label = str(item.get("label") or "근거").strip()
+    label = _sanitize_markdown_label(str(item.get("label") or "근거"))
     url = str(item.get("url") or "").strip()
-    quote = _clip_inline_evidence_quote(str(item.get("quote") or ""))
 
     if item.get("kind") == "web" and item.get("published_date"):
         label = f"{label}, {item['published_date']}"
 
     linked_label = f"[{label}]({url})" if url else label
+    if item.get("kind") == "web":
+        return f"({linked_label})"
+
+    quote = _clip_inline_evidence_quote(str(item.get("quote") or ""))
     if quote:
         return f'({linked_label}: "{quote}")'
     return f"({linked_label})"
 
 
-def _replace_evidence_placeholders(message: str, evidence_items: list[dict]) -> str:
+def _replace_evidence_placeholders(
+    message: str,
+    evidence_items: list[dict],
+) -> str:
     replacements = {
         f"{{{{{item['id']}}}}}": _format_inline_evidence(item)
         for item in evidence_items
@@ -210,15 +221,24 @@ class Agent:
 
                 if tool_name in EVIDENCE_TOOL_NAMES:
                     pending_evidence_items = result.get("evidence_items") or []
+                    if tool_name == "web_search":
+                        pending_evidence_items = pending_evidence_items[:1]
+
+                result_for_llm = result
+                if tool_name == "web_search" and result.get("evidence_items"):
+                    result_for_llm = {
+                        **result,
+                        "evidence_items": result["evidence_items"][:1],
+                    }
 
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": json.dumps(
-                            _redact_search_result_for_llm(result)
+                            _redact_search_result_for_llm(result_for_llm)
                             if tool_name in EVIDENCE_TOOL_NAMES
-                            else result,
+                            else result_for_llm,
                             ensure_ascii=False,
                         ),
                     }
@@ -227,7 +247,10 @@ class Agent:
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
                     raw_msg = result.get("message", "")
                     before_placeholders = len(EVIDENCE_PLACEHOLDER_RE.findall(raw_msg))
-                    msg = _replace_evidence_placeholders(raw_msg, pending_evidence_items)
+                    msg = _replace_evidence_placeholders(
+                        raw_msg,
+                        pending_evidence_items,
+                    )
                     after_placeholders = len(EVIDENCE_PLACEHOLDER_RE.findall(msg))
                     if before_placeholders or pending_evidence_items:
                         preview = msg[:500].replace("\n", " ")
