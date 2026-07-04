@@ -147,12 +147,6 @@ python src/main.py
 
 이미 저장된 채널은 마지막 메시지 이후만 증분 적재합니다. 적재된 메시지는 시간 간격과 메시지 수 기준으로 청크화되고 `text-embedding-3-small` 임베딩이 저장됩니다.
 
-기존 `messages` 테이블만 있고 `message_chunks`를 다시 만들고 싶을 때는 백필 스크립트를 실행합니다.
-
-```bash
-.venv/bin/python src/build_chunks.py
-```
-
 ## 데이터베이스 테이블
 
 시작 시 `src/storage/db.py`가 아래 테이블을 생성합니다.
