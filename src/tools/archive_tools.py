@@ -124,6 +124,7 @@ class SearchChatHistoryTool(BaseTool):
             request.channel_id,
             keyword_matches,
             hybrid_matches,
+            query=query,
             limit=3,
         )
 

@@ -92,7 +92,7 @@ class MessageArchiveService:
         return embed
 
     @staticmethod
-    def _clip_embed_text(text: str, max_chars: int = 360, max_lines: int = 6) -> str:
+    def _clip_embed_text(text: str, max_chars: int = 240, max_lines: int = 4) -> str:
         text = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
         lines = [line for line in text.splitlines() if line.strip()]
         if len(lines) > max_lines:
@@ -102,7 +102,26 @@ class MessageArchiveService:
         return text[: max_chars - 1].rstrip() + "…"
 
     @staticmethod
-    def _search_evidence_embed(item: dict, index: int) -> discord.Embed:
+    def _evidence_preview(item: dict, terms: list[str]) -> str:
+        text = (item.get("content") or item.get("context_content") or "").strip()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines or not terms:
+            return text
+
+        picked: list[str] = []
+        lowered_terms = [term.lower() for term in terms]
+        for line in lines:
+            lowered = line.lower()
+            if any(term in lowered for term in lowered_terms):
+                picked.append(line)
+            if len(picked) >= 4:
+                break
+        return "\n".join(picked) if picked else text
+
+    @staticmethod
+    def _search_evidence_embed(
+        item: dict, index: int, terms: list[str] | None = None
+    ) -> discord.Embed:
         source_url = item.get("source_url")
         title = f"검색 근거 {index}"
         if item.get("start_at"):
@@ -110,7 +129,7 @@ class MessageArchiveService:
         elif item.get("created_at"):
             title += f" · {item['created_at'][:10]}"
 
-        raw_text = item.get("context_content") or item.get("content") or ""
+        raw_text = MessageArchiveService._evidence_preview(item, terms or [])
         embed = discord.Embed(
             title=title,
             url=source_url,
@@ -131,6 +150,7 @@ class MessageArchiveService:
         channel_id: int,
         keyword_matches: list[dict],
         hybrid_matches: list[dict],
+        query: str = "",
         limit: int = 3,
     ) -> int:
         """검색 상위 근거를 Discord embed로 보여준다."""
@@ -149,8 +169,9 @@ class MessageArchiveService:
             if len(selected) >= limit:
                 break
 
+        terms = extract_search_terms(query)
         for index, item in enumerate(selected, start=1):
-            await channel.send(embed=self._search_evidence_embed(item, index))
+            await channel.send(embed=self._search_evidence_embed(item, index, terms))
         return len(selected)
 
     async def ingest_channel(self, channel_id: int, notify: bool = True) -> dict:
