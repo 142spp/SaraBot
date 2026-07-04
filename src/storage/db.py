@@ -93,12 +93,8 @@ async def init_schema() -> None:
                 end_at       TIMESTAMPTZ NOT NULL,
                 authors      TEXT,
                 content      TEXT NOT NULL,
-                embedding    vector(1536),
-                embedding_bge_m3 vector(1024)
+                embedding    vector(1536)
             );
-
-            ALTER TABLE message_chunks
-                ADD COLUMN IF NOT EXISTS embedding_bge_m3 vector(1024);
 
             CREATE INDEX IF NOT EXISTS idx_chunks_channel_end
                 ON message_chunks (channel_id, end_msg_id);
