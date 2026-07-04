@@ -94,7 +94,7 @@ def register_events(client: discord.Client, bot_core: BotCore) -> None:
             try:
                 response: BotResponse = await bot_core.handle(request)
                 if response.message:
-                    preview = response.message[:100].replace("\n", " ")
+                    preview = response.message[:500].replace("\n", " ")
                     logger.info(f"→ #{channel_name}: {preview!r}")
                     await _reply_chunked(message, response.message)
                 else:

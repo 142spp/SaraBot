@@ -225,10 +225,17 @@ class Agent:
                 )
 
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
-                    msg = _replace_evidence_placeholders(
-                        result.get("message", ""),
-                        pending_evidence_items,
-                    )
+                    raw_msg = result.get("message", "")
+                    before_placeholders = len(EVIDENCE_PLACEHOLDER_RE.findall(raw_msg))
+                    msg = _replace_evidence_placeholders(raw_msg, pending_evidence_items)
+                    after_placeholders = len(EVIDENCE_PLACEHOLDER_RE.findall(msg))
+                    if before_placeholders or pending_evidence_items:
+                        preview = msg[:500].replace("\n", " ")
+                        logger.info(
+                            "Evidence placeholders processed | "
+                            f"before={before_placeholders} after={after_placeholders} "
+                            f"items={len(pending_evidence_items)} preview={preview!r}"
+                        )
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
                             request.channel_id,
