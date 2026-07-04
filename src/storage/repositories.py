@@ -1,11 +1,18 @@
+from datetime import timedelta, timezone
+
 from storage.db import get_pool
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+KST = timezone(timedelta(hours=9))
 
 
 def _discord_message_url(guild_id: int, channel_id: int, message_id: int) -> str:
     return f"https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"
+
+
+def _kst_iso(dt) -> str:
+    return dt.astimezone(KST).isoformat()
 
 
 class MemoryRepository:
@@ -97,13 +104,15 @@ class MessageRepository:
         limit: int = 20,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         """content에 terms 일부(OR)를 포함하는 메시지를 점수순으로 반환 (서버 전체).
 
         author가 주어지면 작성자 이름(부분일치)으로도 필터링한다.
         """
         pool = await get_pool()
-        conditions = ["guild_id = $1"]
+        conditions = ["guild_id = $1", "is_bot = FALSE"]
         params: list = [guild_id]
         if author:
             params.append(f"%{author}%")
@@ -116,13 +125,20 @@ class MessageRepository:
             conditions.append(f"content NOT ILIKE ${len(params)}")
             params.append(f"%<@!{exclude_mention_user_id}>%")
             conditions.append(f"content NOT ILIKE ${len(params)}")
+        if date_from:
+            params.append(date_from)
+            conditions.append(f"created_at >= ${len(params)}")
+        if date_to:
+            params.append(date_to)
+            conditions.append(f"created_at < ${len(params)}")
         term_conditions: list[str] = []
         score_parts: list[str] = []
-        for term in terms:
+        for idx, term in enumerate(terms):
             params.append(f"%{term}%")
             term_conditions.append(f"content ILIKE ${len(params)}")
+            weight = 4 if idx == 0 else 1
             score_parts.append(
-                f"CASE WHEN content ILIKE ${len(params)} THEN 1 ELSE 0 END"
+                f"CASE WHEN content ILIKE ${len(params)} THEN {weight} ELSE 0 END"
             )
         if term_conditions:
             conditions.append(f"({' OR '.join(term_conditions)})")
@@ -145,6 +161,7 @@ class MessageRepository:
                 "is_bot": r["is_bot"],
                 "content": r["content"],
                 "created_at": r["created_at"].isoformat(),
+                "created_at_kst": _kst_iso(r["created_at"]),
                 "keyword_score": r["keyword_score"],
                 "source_url": _discord_message_url(
                     r["guild_id"], r["channel_id"], r["message_id"]
@@ -236,6 +253,8 @@ class ChunkRepository:
         channel_id: int | None = None,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         """content에 terms 일부(OR)를 포함하는 대화 청크를 점수순으로 반환."""
         if not terms and not author:
@@ -258,14 +277,21 @@ class ChunkRepository:
             conditions.append(f"content NOT ILIKE ${len(params)}")
             params.append(f"%<@!{exclude_mention_user_id}>%")
             conditions.append(f"content NOT ILIKE ${len(params)}")
+        if date_from:
+            params.append(date_from)
+            conditions.append(f"start_at >= ${len(params)}")
+        if date_to:
+            params.append(date_to)
+            conditions.append(f"start_at < ${len(params)}")
 
         term_conditions: list[str] = []
         score_parts: list[str] = []
-        for term in terms:
+        for idx, term in enumerate(terms):
             params.append(f"%{term}%")
             term_conditions.append(f"content ILIKE ${len(params)}")
+            weight = 4 if idx == 0 else 1
             score_parts.append(
-                f"CASE WHEN content ILIKE ${len(params)} THEN 1 ELSE 0 END"
+                f"CASE WHEN content ILIKE ${len(params)} THEN {weight} ELSE 0 END"
             )
         if term_conditions:
             conditions.append(f"({' OR '.join(term_conditions)})")
@@ -295,6 +321,8 @@ class ChunkRepository:
                 "content": r["content"],
                 "start_at": r["start_at"].isoformat(),
                 "end_at": r["end_at"].isoformat(),
+                "start_at_kst": _kst_iso(r["start_at"]),
+                "end_at_kst": _kst_iso(r["end_at"]),
                 "keyword_score": r["keyword_score"],
                 "source_url": _discord_message_url(
                     guild_id, r["channel_id"], r["start_msg_id"]
@@ -361,6 +389,8 @@ class ChunkRepository:
         channel_id: int | None = None,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         """쿼리 임베딩과 cosine 거리가 가까운 대화 청크를 반환 (서버 전체)."""
         pool = await get_pool()
@@ -380,6 +410,12 @@ class ChunkRepository:
             conditions.append(f"content NOT ILIKE ${len(params)}")
             params.append(f"%<@!{exclude_mention_user_id}>%")
             conditions.append(f"content NOT ILIKE ${len(params)}")
+        if date_from:
+            params.append(date_from)
+            conditions.append(f"start_at >= ${len(params)}")
+        if date_to:
+            params.append(date_to)
+            conditions.append(f"start_at < ${len(params)}")
         params.append(limit)
         rows = await pool.fetch(
             f"""
@@ -404,6 +440,8 @@ class ChunkRepository:
                 "content": r["content"],
                 "start_at": r["start_at"].isoformat(),
                 "end_at": r["end_at"].isoformat(),
+                "start_at_kst": _kst_iso(r["start_at"]),
+                "end_at_kst": _kst_iso(r["end_at"]),
                 "distance": round(r["distance"], 4),
                 "source_url": _discord_message_url(
                     guild_id, r["channel_id"], r["start_msg_id"]

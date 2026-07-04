@@ -16,6 +16,8 @@ CHUNK_MAX_MESSAGES = 20  # 한 덩어리 최대 메시지 수 (버스트 p90=26,
 MAX_MSG_CHARS = 1000  # 메시지 1개 임베딩 텍스트 상한 (긴 붙여넣기/봇 출력 대비)
 MAX_CHUNK_CHARS = 4000  # 청크 합본 상한 (임베딩 8192토큰 한도 안전선)
 SEARCH_STOPWORDS = {
+    "or",
+    "and",
     "이",
     "그",
     "저",
@@ -42,6 +44,7 @@ SEARCH_STOPWORDS = {
     "말한",
     "기억",
     "찾아줘",
+    "찾아봐",
     "알려줘",
     "궁금해",
 }
@@ -49,7 +52,7 @@ SEARCH_STOPWORDS = {
 
 def extract_search_terms(query: str, limit: int = 8) -> list[str]:
     raw = re.findall(r"[0-9A-Za-z가-힣]{2,}", query)
-    return [term for term in raw if term not in SEARCH_STOPWORDS][:limit]
+    return [term for term in raw if term.lower() not in SEARCH_STOPWORDS][:limit]
 
 
 def _rrf(rank: int, k: int = 60) -> float:
@@ -124,7 +127,11 @@ class MessageArchiveService:
     ) -> dict:
         source_url = item.get("source_url")
         title = f"검색 근거 {index}"
-        if item.get("start_at"):
+        if item.get("start_at_kst"):
+            title += f" · {item['start_at_kst'][:10]} KST"
+        elif item.get("created_at_kst"):
+            title += f" · {item['created_at_kst'][:10]} KST"
+        elif item.get("start_at"):
             title += f" · {item['start_at'][:10]}"
         elif item.get("created_at"):
             title += f" · {item['created_at'][:10]}"
@@ -159,7 +166,7 @@ class MessageArchiveService:
         """검색 상위 근거를 최종 응답에 붙일 embed payload로 만든다."""
         selected: list[dict] = []
         seen_urls: set[str] = set()
-        for item in hybrid_matches + keyword_matches:
+        for item in keyword_matches + hybrid_matches:
             url = item.get("source_url")
             if not url or url in seen_urls:
                 continue
@@ -260,6 +267,8 @@ class MessageArchiveService:
         limit: int = 20,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
         if not terms and not author:
@@ -271,6 +280,8 @@ class MessageArchiveService:
             limit,
             before_message_id=before_message_id,
             exclude_mention_user_id=exclude_mention_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     async def keyword_chunk_search(
@@ -282,6 +293,8 @@ class MessageArchiveService:
         channel_id: int | None = None,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
         if not terms and not author:
@@ -294,6 +307,8 @@ class MessageArchiveService:
             channel_id=channel_id,
             before_message_id=before_message_id,
             exclude_mention_user_id=exclude_mention_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     @staticmethod
@@ -349,6 +364,8 @@ class MessageArchiveService:
         channel_id: int | None = None,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         semantic_matches = await self.semantic_search(
             guild_id,
@@ -359,6 +376,8 @@ class MessageArchiveService:
             channel_id=channel_id,
             before_message_id=before_message_id,
             exclude_mention_user_id=exclude_mention_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
         keyword_matches = await self.keyword_chunk_search(
             guild_id,
@@ -368,6 +387,8 @@ class MessageArchiveService:
             channel_id=channel_id,
             before_message_id=before_message_id,
             exclude_mention_user_id=exclude_mention_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
         ranked = self._merge_hybrid(semantic_matches, keyword_matches)
         if self._llm and query.strip() and len(ranked) > 1 and rerank_limit > 1:
@@ -556,6 +577,8 @@ class MessageArchiveService:
         channel_id: int | None = None,
         before_message_id: int | None = None,
         exclude_mention_user_id: int | None = None,
+        date_from=None,
+        date_to=None,
     ) -> list[dict]:
         """쿼리를 임베딩해 의미적으로 가까운 대화 청크를 반환 (서버 전체)."""
         if not query.strip():
@@ -572,5 +595,7 @@ class MessageArchiveService:
             channel_id=channel_id,
             before_message_id=before_message_id,
             exclude_mention_user_id=exclude_mention_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
         return candidates[:limit]

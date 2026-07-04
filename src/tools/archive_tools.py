@@ -1,8 +1,55 @@
+import re
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from services.message_archive_service import MessageArchiveService
 from tools.base import BaseTool
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+_SELF_AUTHOR_HINTS = ("내가", "내 ", "나 ", "나는", "나도", "내꺼", "내거")
+_NOT_SELF_AUTHOR_HINTS = ("나 말고", "내 말고", "나는 말고")
+KST = ZoneInfo("Asia/Seoul")
+
+
+def _author_is_explicit(author: str | None, request) -> bool:
+    if not author:
+        return False
+    text = request.clean_content or ""
+    if author in text:
+        return True
+    if author == request.display_name:
+        return any(hint in text for hint in _SELF_AUTHOR_HINTS) and not any(
+            hint in text for hint in _NOT_SELF_AUTHOR_HINTS
+        )
+    return False
+
+
+def _parse_kst_date_range(text: str):
+    match = re.search(
+        r"(\d{2,4})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?",
+        text,
+    )
+    if not match:
+        return None, None
+
+    year = int(match.group(1))
+    if year < 100:
+        year += 2000
+    month = int(match.group(2))
+    day = int(match.group(3)) if match.group(3) else None
+    if day:
+        start = datetime(year, month, day, tzinfo=KST)
+        end = start + timedelta(days=1)
+    else:
+        start = datetime(year, month, 1, tzinfo=KST)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=KST)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=KST)
+    return start, end
 
 
 class IngestChannelHistoryTool(BaseTool):
@@ -61,8 +108,10 @@ class SearchChatHistoryTool(BaseTool):
                     "검색 결과의 source_url/context_sources는 원본 Discord 메시지 근거다. "
                     "respond_text에서는 핵심 요약을 말하고 evidence_embeds를 embeds에 그대로 넣어라. "
                     "query에는 핵심 키워드나 주제를 넣어라. "
-                    "특정 사람에 대한 질문('A는 뭘 좋아해?', 'A가 한 말')이면 author에 그 사람 이름을 넣어라. "
+                    "author는 현재 사용자 요청 문장에 특정 작성자 이름이 직접 나오거나 "
+                    "'내가/내 기록'처럼 요청자 본인을 명시할 때만 넣어라. "
                     "'누가 무슨 얘기했어?'처럼 말한 사람을 찾아야 하는 질문이면 author를 비워라. "
+                    "author_fallback_used가 true면 작성자 필터로는 못 찾고 서버 전체 검색으로 찾은 결과다. "
                     "결과의 시간(created_at/start_at)으로 '언제' 질문에 답할 수 있다. "
                     "검색 전 최신 기록까지 자동 갱신되며, 첫 사용 시 시간이 걸릴 수 있으니 say로 먼저 알려라."
                 ),
@@ -87,8 +136,15 @@ class SearchChatHistoryTool(BaseTool):
     async def execute(self, args: dict, request) -> dict:
         query = args.get("query", "")
         author = args.get("author")
+        if author and not _author_is_explicit(author, request):
+            logger.info(
+                "search_chat_history author ignored | "
+                f"author={author!r} request={request.clean_content!r}"
+            )
+            author = None
         if not query and not author:
             return {"ok": False, "error": "query 또는 author 중 하나는 필요해"}
+        date_from, date_to = _parse_kst_date_range(request.clean_content or "")
 
         # 검색 전 조용한 증분 갱신으로 최신 메시지·청크까지 포함
         await self._archive.ingest_channel(request.channel_id, notify=False)
@@ -102,7 +158,25 @@ class SearchChatHistoryTool(BaseTool):
             limit,
             before_message_id=request.message_id,
             exclude_mention_user_id=request.bot_user_id,
+            date_from=date_from,
+            date_to=date_to,
         )
+        author_fallback_used = False
+        if author and query and not keyword_matches:
+            fallback_keyword_matches = await self._archive.search(
+                request.guild_id,
+                query,
+                None,
+                limit,
+                before_message_id=request.message_id,
+                exclude_mention_user_id=request.bot_user_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+            if fallback_keyword_matches:
+                keyword_matches = fallback_keyword_matches
+                author_fallback_used = True
+
         hybrid_matches = []
         hybrid_error = None
         if query:
@@ -115,6 +189,8 @@ class SearchChatHistoryTool(BaseTool):
                     author=author,
                     before_message_id=request.message_id,
                     exclude_mention_user_id=request.bot_user_id,
+                    date_from=date_from,
+                    date_to=date_to,
                 )
             except Exception as e:
                 hybrid_error = str(e)
@@ -133,6 +209,12 @@ class SearchChatHistoryTool(BaseTool):
             "hybrid_matches": hybrid_matches,
             "evidence_embeds": evidence_embeds,
             "hybrid_error": hybrid_error,
+            "author_filter": author,
+            "author_fallback_used": author_fallback_used,
+            "date_filter_kst": {
+                "from": date_from.isoformat() if date_from else None,
+                "to": date_to.isoformat() if date_to else None,
+            },
         }
 
 
