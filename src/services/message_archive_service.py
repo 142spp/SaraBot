@@ -92,8 +92,11 @@ class MessageArchiveService:
         return embed
 
     @staticmethod
-    def _clip_embed_text(text: str, max_chars: int = 900) -> str:
+    def _clip_embed_text(text: str, max_chars: int = 360, max_lines: int = 6) -> str:
         text = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+        lines = [line for line in text.splitlines() if line.strip()]
+        if len(lines) > max_lines:
+            text = "\n".join(lines[:max_lines]).rstrip() + "\n…"
         if len(text) <= max_chars:
             return text
         return text[: max_chars - 1].rstrip() + "…"
