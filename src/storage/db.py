@@ -98,5 +98,24 @@ async def init_schema() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_chunks_channel_end
                 ON message_chunks (channel_id, end_msg_id);
+
+            CREATE TABLE IF NOT EXISTS message_chunks_v2 (
+                id           BIGSERIAL PRIMARY KEY,
+                channel_id   BIGINT NOT NULL,
+                guild_id     BIGINT NOT NULL,
+                start_msg_id BIGINT NOT NULL,
+                end_msg_id   BIGINT NOT NULL,
+                start_at     TIMESTAMPTZ NOT NULL,
+                end_at       TIMESTAMPTZ NOT NULL,
+                authors      TEXT,
+                content      TEXT NOT NULL,
+                embedding    vector(1536)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chunks_v2_channel_end
+                ON message_chunks_v2 (channel_id, end_msg_id);
+
+            CREATE INDEX IF NOT EXISTS idx_chunks_v2_channel_start
+                ON message_chunks_v2 (channel_id, start_msg_id);
         """)
     logger.info("DB schema initialized")
