@@ -52,6 +52,10 @@ def extract_search_terms(query: str, limit: int = 8) -> list[str]:
     return [term for term in raw if term not in SEARCH_STOPWORDS][:limit]
 
 
+def _rrf(rank: int, k: int = 60) -> float:
+    return 1.0 / (k + rank)
+
+
 class MessageArchiveService:
     def __init__(
         self,
@@ -195,6 +199,71 @@ class MessageArchiveService:
             author=author,
             channel_id=channel_id,
         )
+
+    @staticmethod
+    def _merge_hybrid(
+        semantic_matches: list[dict],
+        keyword_matches: list[dict],
+    ) -> list[dict]:
+        merged: dict[int, dict] = {}
+
+        def add(item: dict, source: str, rank: int) -> None:
+            item_id = item["id"]
+            if item_id not in merged:
+                merged[item_id] = {
+                    **item,
+                    "hybrid_score": 0.0,
+                    "retrieval_sources": [],
+                }
+            existing = merged[item_id]
+            existing["hybrid_score"] += _rrf(rank)
+            existing["retrieval_sources"].append(source)
+            if "distance" in item:
+                existing["distance"] = item["distance"]
+            if "keyword_score" in item:
+                existing["keyword_score"] = item["keyword_score"]
+
+        for rank, item in enumerate(semantic_matches, start=1):
+            add(item, "semantic", rank)
+        for rank, item in enumerate(keyword_matches, start=1):
+            add(item, "keyword", rank)
+
+        return sorted(
+            merged.values(),
+            key=lambda item: (
+                item["hybrid_score"],
+                item.get("keyword_score", 0),
+                -item.get("distance", 9_999),
+            ),
+            reverse=True,
+        )
+
+    async def hybrid_search(
+        self,
+        guild_id: int,
+        query: str,
+        limit: int = 10,
+        *,
+        candidate_limit: int = 50,
+        author: str | None = None,
+        channel_id: int | None = None,
+    ) -> list[dict]:
+        semantic_matches = await self.semantic_search(
+            guild_id,
+            query,
+            limit=candidate_limit,
+            candidate_limit=candidate_limit,
+            author=author,
+            channel_id=channel_id,
+        )
+        keyword_matches = await self.keyword_chunk_search(
+            guild_id,
+            query,
+            author=author,
+            limit=candidate_limit,
+            channel_id=channel_id,
+        )
+        return self._merge_hybrid(semantic_matches, keyword_matches)[:limit]
 
     async def sample_user_messages(
         self, guild_id: int, author: str, recent: int = 50, even: int = 250

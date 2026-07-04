@@ -170,6 +170,26 @@ async def _keyword_chunk_ids(conn, query: str, limit: int) -> list[int]:
     return [row["id"] for row in rows]
 
 
+def _rrf(rank: int, k: int = 60) -> float:
+    return 1.0 / (k + rank)
+
+
+def _hybrid_rrf_ids(vector_ids: list[int], keyword_ids: list[int]) -> list[int]:
+    scores: dict[int, float] = {}
+    for rank, item_id in enumerate(vector_ids, start=1):
+        scores[item_id] = scores.get(item_id, 0.0) + _rrf(rank)
+    for rank, item_id in enumerate(keyword_ids, start=1):
+        scores[item_id] = scores.get(item_id, 0.0) + _rrf(rank)
+    return [
+        item_id
+        for item_id, _ in sorted(
+            scores.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    ]
+
+
 def _hit(ids: list[int], target_id: int, k: int) -> bool:
     return target_id in ids[:k]
 
@@ -185,6 +205,8 @@ async def evaluate(cases: list[dict]) -> dict:
         "vector@50": [],
         "keyword_chunk@50": [],
         "union_vector50_keyword50": [],
+        "hybrid_rrf@5": [],
+        "hybrid_rrf@10": [],
     }
     ranks = []
 
@@ -195,12 +217,15 @@ async def evaluate(cases: list[dict]) -> dict:
             vector_ids = await _vector_ids(conn, literal, 50)
             keyword_ids = await _keyword_chunk_ids(conn, case["query"], 50)
             union_ids = list(dict.fromkeys(vector_ids + keyword_ids))
+            hybrid_ids = _hybrid_rrf_ids(vector_ids, keyword_ids)
 
             metrics["vector@5"].append(_hit(vector_ids, target_id, 5))
             metrics["vector@10"].append(_hit(vector_ids, target_id, 10))
             metrics["vector@50"].append(_hit(vector_ids, target_id, 50))
             metrics["keyword_chunk@50"].append(_hit(keyword_ids, target_id, 50))
             metrics["union_vector50_keyword50"].append(target_id in union_ids)
+            metrics["hybrid_rrf@5"].append(_hit(hybrid_ids, target_id, 5))
+            metrics["hybrid_rrf@10"].append(_hit(hybrid_ids, target_id, 10))
             ranks.append(
                 vector_ids.index(target_id) + 1 if target_id in vector_ids else 999
             )

@@ -53,11 +53,10 @@ class SearchChatHistoryTool(BaseTool):
                     "현재 채널의 과거 대화 기록을 검색한다. "
                     "사용자가 '예전에 ~한 얘기', '언제 ~했어?', '~에 대해 뭐라고 했지?' 처럼 "
                     "과거 대화를 물어볼 때 사용. "
-                    "세 가지 결과를 함께 돌려준다: "
+                    "두 가지 결과를 함께 돌려준다: "
                     "keyword_matches(핵심 단어가 들어간 개별 메시지), "
-                    "keyword_chunk_matches(핵심 단어가 들어간 대화 덩어리), "
-                    "semantic_matches(query와 의미가 비슷한 대화 덩어리). "
-                    "모두 참고해서 답해라. 돌려 말한 질문이어도 semantic_matches가 관련 대화를 찾아준다. "
+                    "hybrid_matches(키워드 검색과 의미 검색을 합쳐 재정렬한 대화 덩어리). "
+                    "둘 다 참고해서 답해라. 돌려 말한 질문도 hybrid_matches가 관련 대화를 찾아준다. "
                     "query에는 핵심 키워드나 주제를 넣어라. "
                     "특정 사람에 대한 질문('A는 뭘 좋아해?', 'A가 한 말')이면 author에 그 사람 이름을 넣어라. "
                     "결과의 시간(created_at/start_at)으로 '언제' 질문에 답할 수 있다. "
@@ -95,17 +94,9 @@ class SearchChatHistoryTool(BaseTool):
         keyword_matches = await self._archive.search(
             request.guild_id, query, author, limit
         )
-        keyword_chunk_matches = []
+        hybrid_matches = []
         if query:
-            keyword_chunk_matches = await self._archive.keyword_chunk_search(
-                request.guild_id,
-                query,
-                author=author,
-                limit=min(limit, 20),
-            )
-        semantic_matches = []
-        if query:
-            semantic_matches = await self._archive.semantic_search(
+            hybrid_matches = await self._archive.hybrid_search(
                 request.guild_id,
                 query,
                 limit=min(limit, 10),
@@ -116,8 +107,7 @@ class SearchChatHistoryTool(BaseTool):
         return {
             "ok": True,
             "keyword_matches": keyword_matches,
-            "keyword_chunk_matches": keyword_chunk_matches,
-            "semantic_matches": semantic_matches,
+            "hybrid_matches": hybrid_matches,
         }
 
 
