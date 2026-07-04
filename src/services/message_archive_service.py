@@ -91,6 +91,65 @@ class MessageArchiveService:
             embed.description = f"**{saved:,}개** 저장됨"
         return embed
 
+    @staticmethod
+    def _clip_embed_text(text: str, max_chars: int = 900) -> str:
+        text = re.sub(r"\n{3,}", "\n\n", (text or "").strip())
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 1].rstrip() + "…"
+
+    @staticmethod
+    def _search_evidence_embed(item: dict, index: int) -> discord.Embed:
+        source_url = item.get("source_url")
+        title = f"검색 근거 {index}"
+        if item.get("start_at"):
+            title += f" · {item['start_at'][:10]}"
+        elif item.get("created_at"):
+            title += f" · {item['created_at'][:10]}"
+
+        raw_text = item.get("context_content") or item.get("content") or ""
+        embed = discord.Embed(
+            title=title,
+            url=source_url,
+            description=MessageArchiveService._clip_embed_text(raw_text),
+            color=discord.Color.blurple(),
+        )
+        authors = item.get("authors") or item.get("author")
+        if authors:
+            embed.add_field(name="작성자", value=str(authors)[:1024], inline=False)
+        if source_url:
+            embed.add_field(name="원문", value=f"[메시지로 이동]({source_url})", inline=False)
+        if item.get("retrieval_sources"):
+            embed.set_footer(text=f"검색 방식: {', '.join(item['retrieval_sources'])}")
+        return embed
+
+    async def send_search_evidence_embeds(
+        self,
+        channel_id: int,
+        keyword_matches: list[dict],
+        hybrid_matches: list[dict],
+        limit: int = 3,
+    ) -> int:
+        """검색 상위 근거를 Discord embed로 보여준다."""
+        channel = self._client.get_channel(channel_id)
+        if not channel or not hasattr(channel, "send"):
+            return 0
+
+        selected: list[dict] = []
+        seen_urls: set[str] = set()
+        for item in hybrid_matches + keyword_matches:
+            url = item.get("source_url")
+            if not url or url in seen_urls:
+                continue
+            selected.append(item)
+            seen_urls.add(url)
+            if len(selected) >= limit:
+                break
+
+        for index, item in enumerate(selected, start=1):
+            await channel.send(embed=self._search_evidence_embed(item, index))
+        return len(selected)
+
     async def ingest_channel(self, channel_id: int, notify: bool = True) -> dict:
         """현재 채널의 전체 기록을 DB에 적재한다. 이미 저장분이 있으면 그 이후만(증분).
 
