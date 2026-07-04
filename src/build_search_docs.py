@@ -34,6 +34,7 @@ MAX_SOURCE_CHARS = 3000
 MAX_SOURCE_CHUNKS = 20
 OVERLAP_CHUNKS = 1
 INSERT_BATCH_SIZE = 64
+DEFAULT_CONCURRENCY = 8
 
 
 def _source_text(chunks: list) -> str:
@@ -105,6 +106,20 @@ async def summarize_group(llm: LLMService, source: str) -> str:
     return (await llm.judge(prompt)).strip()[:800]
 
 
+async def summarize_groups(
+    llm: LLMService,
+    sources: list[str],
+    concurrency: int,
+) -> list[str]:
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def run(source: str) -> str:
+        async with semaphore:
+            return await summarize_group(llm, source)
+
+    return await asyncio.gather(*(run(source) for source in sources))
+
+
 async def build_channel(
     pool,
     repo: SearchDocRepository,
@@ -113,6 +128,7 @@ async def build_channel(
     channel_id: int,
     guild_id: int,
     remaining: int | None,
+    concurrency: int,
 ) -> int:
     chunks = await pool.fetch(
         """
@@ -132,44 +148,36 @@ async def build_channel(
     )
 
     total = 0
-    pending_rows: list[tuple] = []
-    pending_texts: list[str] = []
-
-    async def flush_pending() -> None:
-        nonlocal pending_rows, pending_texts, total
-        if not pending_rows:
-            return
-        embeddings = await embedder.embed(pending_texts)
+    for i in range(0, len(groups), INSERT_BATCH_SIZE):
+        batch = groups[i : i + INSERT_BATCH_SIZE]
+        sources = [_source_text(group)[:MAX_SOURCE_CHARS] for group in batch]
+        search_texts = await summarize_groups(llm, sources, concurrency)
+        embeddings = await embedder.embed(search_texts)
         rows = [
-            (*row, EmbeddingService.to_pgvector(embedding))
-            for row, embedding in zip(pending_rows, embeddings)
+            (
+                guild_id,
+                channel_id,
+                group[0]["id"],
+                group[-1]["id"],
+                group[0]["start_msg_id"],
+                group[-1]["end_msg_id"],
+                group[0]["start_at"],
+                group[-1]["end_at"],
+                _authors(group),
+                source,
+                search_text,
+                EmbeddingService.to_pgvector(embedding),
+            )
+            for group, source, search_text, embedding in zip(
+                batch,
+                sources,
+                search_texts,
+                embeddings,
+            )
         ]
         await repo.insert_docs(rows)
         total += len(rows)
         logger.info(f"search docs inserted | channel={channel_id} total={total}")
-        pending_rows = []
-        pending_texts = []
-
-    for group in groups:
-        source = _source_text(group)[:MAX_SOURCE_CHARS]
-        search_text = await summarize_group(llm, source)
-        pending_rows.append((
-            guild_id,
-            channel_id,
-            group[0]["id"],
-            group[-1]["id"],
-            group[0]["start_msg_id"],
-            group[-1]["end_msg_id"],
-            group[0]["start_at"],
-            group[-1]["end_at"],
-            _authors(group),
-            source,
-            search_text,
-        ))
-        pending_texts.append(search_text)
-        if len(pending_rows) >= INSERT_BATCH_SIZE:
-            await flush_pending()
-    await flush_pending()
     return total
 
 
@@ -182,6 +190,7 @@ async def main() -> None:
         default=0,
         help="Build at most this many search docs across all channels. 0 means all.",
     )
+    parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY)
     args = parser.parse_args()
 
     await init_schema()
@@ -217,6 +226,7 @@ async def main() -> None:
                 row["channel_id"],
                 row["guild_id"],
                 remaining,
+                max(1, args.concurrency),
             )
             total += count
         logger.info(f"search doc backfill done | docs={total}")
