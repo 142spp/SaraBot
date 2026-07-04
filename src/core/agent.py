@@ -17,7 +17,7 @@ MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
 EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
 EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
-MAX_EVIDENCE_QUOTE_CHARS = 120
+MAX_EVIDENCE_QUOTE_CHARS = 500
 EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
@@ -60,10 +60,9 @@ def _format_inline_evidence(item: dict) -> str:
 
     title = f"{ref_label} | {label}" if label else ref_label
     lines = [title]
-    if item.get("kind") == "chat":
-        quote = _clip_evidence_text(str(item.get("quote") or ""))
-        if quote:
-            lines.append(quote)
+    quote = _clip_evidence_text(str(item.get("quote") or ""))
+    if quote:
+        lines.append(quote)
     if url:
         lines.append(url)
     return "\n```text\n" + "\n".join(lines) + "\n```\n"
@@ -237,24 +236,15 @@ class Agent:
 
                 if tool_name in EVIDENCE_TOOL_NAMES:
                     pending_evidence_items = result.get("evidence_items") or []
-                    if tool_name == "web_search":
-                        pending_evidence_items = pending_evidence_items[:1]
-
-                result_for_llm = result
-                if tool_name == "web_search" and result.get("evidence_items"):
-                    result_for_llm = {
-                        **result,
-                        "evidence_items": result["evidence_items"][:1],
-                    }
 
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": json.dumps(
-                            _redact_search_result_for_llm(result_for_llm)
+                            _redact_search_result_for_llm(result)
                             if tool_name in EVIDENCE_TOOL_NAMES
-                            else result_for_llm,
+                            else result,
                             ensure_ascii=False,
                         ),
                     }

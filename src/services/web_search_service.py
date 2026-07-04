@@ -8,10 +8,10 @@ logger = get_logger(__name__)
 TAVILY_URL = "https://api.tavily.com/search"
 TIMEOUT = 15
 MAX_CONTENT_CHARS = 500  # 결과 본문 1개당 상한 (토큰 절약)
-MAX_INLINE_EVIDENCE_CHARS = 160
+MAX_EVIDENCE_CONTENT_CHARS = 500
 
 
-def _clip(text: str, max_chars: int = MAX_INLINE_EVIDENCE_CHARS) -> str:
+def _clip(text: str, max_chars: int = MAX_EVIDENCE_CONTENT_CHARS) -> str:
     text = " ".join((text or "").split())
     if len(text) <= max_chars:
         return text
