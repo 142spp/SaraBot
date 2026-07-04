@@ -113,8 +113,7 @@ def _replace_evidence_placeholders(
         logger.warning("Unknown evidence placeholder in final response")
         message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
 
-    chat_items = [item for item in evidence_items if item.get("kind") == "chat"]
-    field_items = chat_items or [
+    field_items = [
         item for item in evidence_items if str(item.get("id") or "") in used_ids
     ]
     fields = [
