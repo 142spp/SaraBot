@@ -170,53 +170,6 @@ async def _keyword_chunk_ids(conn, query: str, limit: int) -> list[int]:
     return [row["id"] for row in rows]
 
 
-async def _search_doc_vector_ids(
-    conn,
-    embedding_literal: str,
-    limit: int,
-) -> list[int]:
-    rows = await conn.fetch(
-        """
-        SELECT id
-        FROM message_chunk_search_docs
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector ASC
-        LIMIT $2
-        """,
-        embedding_literal,
-        limit,
-    )
-    return [row["id"] for row in rows]
-
-
-async def _keyword_search_doc_ids(conn, query: str, limit: int) -> list[int]:
-    terms = _extract_terms(query)
-    if not terms:
-        return []
-
-    params: list = []
-    clauses: list[str] = []
-    score_parts: list[str] = []
-    for term in terms:
-        params.append(f"%{term}%")
-        idx = len(params)
-        clauses.append(f"search_text ILIKE ${idx}")
-        score_parts.append(f"CASE WHEN search_text ILIKE ${idx} THEN 1 ELSE 0 END")
-
-    params.append(limit)
-    rows = await conn.fetch(
-        f"""
-        SELECT id
-        FROM message_chunk_search_docs
-        WHERE {" OR ".join(clauses)}
-        ORDER BY ({" + ".join(score_parts)}) DESC, end_at DESC
-        LIMIT ${len(params)}
-        """,
-        *params,
-    )
-    return [row["id"] for row in rows]
-
-
 def _rrf(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
 
@@ -335,83 +288,6 @@ async def evaluate(cases: list[dict]) -> dict:
     }
 
 
-async def _search_doc_hit(
-    conn,
-    doc_ids: list[int],
-    target_chunk_id: int,
-) -> bool:
-    if not doc_ids:
-        return False
-    return await conn.fetchval(
-        """
-        SELECT EXISTS (
-            SELECT 1
-            FROM message_chunk_search_docs d
-            JOIN message_chunks c
-              ON c.id = $2
-             AND c.channel_id = d.channel_id
-             AND d.start_msg_id <= c.end_msg_id
-             AND d.end_msg_id >= c.start_msg_id
-            WHERE d.id = ANY($1::bigint[])
-        )
-        """,
-        doc_ids,
-        target_chunk_id,
-    )
-
-
-async def evaluate_search_docs(cases: list[dict]) -> dict:
-    pool = await get_pool()
-    embedder = EmbeddingService()
-    vectors = await embedder.embed([case["query"] for case in cases])
-
-    metrics = {
-        "search_doc_vector@5": [],
-        "search_doc_vector@10": [],
-        "search_doc_vector@50": [],
-        "search_doc_keyword@50": [],
-        "search_doc_union@50": [],
-        "search_doc_hybrid@5": [],
-        "search_doc_hybrid@10": [],
-    }
-
-    async with pool.acquire() as conn:
-        for case, vector in zip(cases, vectors):
-            target_id = int(case["target_id"])
-            literal = _embedding_literal(vector)
-            vector_ids = await _search_doc_vector_ids(conn, literal, 50)
-            keyword_ids = await _keyword_search_doc_ids(conn, case["query"], 50)
-            union_ids = list(dict.fromkeys(vector_ids + keyword_ids))
-            hybrid_ids = _hybrid_rrf_ids(vector_ids, keyword_ids)
-
-            metrics["search_doc_vector@5"].append(
-                await _search_doc_hit(conn, vector_ids[:5], target_id)
-            )
-            metrics["search_doc_vector@10"].append(
-                await _search_doc_hit(conn, vector_ids[:10], target_id)
-            )
-            metrics["search_doc_vector@50"].append(
-                await _search_doc_hit(conn, vector_ids, target_id)
-            )
-            metrics["search_doc_keyword@50"].append(
-                await _search_doc_hit(conn, keyword_ids, target_id)
-            )
-            metrics["search_doc_union@50"].append(
-                await _search_doc_hit(conn, union_ids, target_id)
-            )
-            metrics["search_doc_hybrid@5"].append(
-                await _search_doc_hit(conn, hybrid_ids[:5], target_id)
-            )
-            metrics["search_doc_hybrid@10"].append(
-                await _search_doc_hit(conn, hybrid_ids[:10], target_id)
-            )
-
-    return {
-        "cases": len(cases),
-        **{name: mean(values) for name, values in metrics.items()},
-    }
-
-
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
@@ -419,7 +295,6 @@ async def main() -> None:
     parser.add_argument("--seed", default="sachikobot-rag-v1")
     parser.add_argument("--min-chars", type=int, default=180)
     parser.add_argument("--max-chars", type=int, default=900)
-    parser.add_argument("--search-docs", action="store_true")
     args = parser.parse_args()
 
     load_dotenv(".env")
@@ -430,7 +305,7 @@ async def main() -> None:
         min_chars=args.min_chars,
         max_chars=args.max_chars,
     )
-    result = await evaluate_search_docs(cases) if args.search_docs else await evaluate(cases)
+    result = await evaluate(cases)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     await close_pool()
 
