@@ -25,7 +25,6 @@ from storage.db import close_pool, get_pool
 
 
 DEFAULT_CASES_PATH = Path(".rag_eval_cases.json")
-TABLE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 STOPWORDS = {
     "이",
     "그",
@@ -62,12 +61,6 @@ def _embedding_literal(vector: list[float]) -> str:
     return "[" + ",".join(f"{x:.7f}" for x in vector) + "]"
 
 
-def _table(name: str) -> str:
-    if not TABLE_PATTERN.fullmatch(name):
-        raise ValueError(f"Invalid table name: {name}")
-    return name
-
-
 def _scrub_for_prompt(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[:900]
 
@@ -95,7 +88,6 @@ async def _make_query(client: AsyncOpenAI, content: str) -> str:
 async def _load_or_create_cases(
     *,
     path: Path,
-    case_table: str,
     samples: int,
     seed: str,
     min_chars: int,
@@ -109,9 +101,9 @@ async def _load_or_create_cases(
     cases: list[dict] = []
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            f"""
+            """
             SELECT id, content
-            FROM {_table(case_table)}
+            FROM message_chunks
             WHERE embedding IS NOT NULL
               AND length(content) BETWEEN $1 AND $2
             ORDER BY md5(id::text || $3)
@@ -125,7 +117,6 @@ async def _load_or_create_cases(
         for row in rows:
             cases.append({
                 "target_id": row["id"],
-                "target_table": case_table,
                 "query": await _make_query(client, row["content"]),
             })
 
@@ -136,16 +127,11 @@ async def _load_or_create_cases(
     return cases
 
 
-async def _vector_ids(
-    conn,
-    eval_table: str,
-    embedding_literal: str,
-    limit: int,
-) -> list[int]:
+async def _vector_ids(conn, embedding_literal: str, limit: int) -> list[int]:
     rows = await conn.fetch(
-        f"""
+        """
         SELECT id
-        FROM {_table(eval_table)}
+        FROM message_chunks
         WHERE embedding IS NOT NULL
         ORDER BY embedding <=> $1::vector ASC
         LIMIT $2
@@ -156,7 +142,7 @@ async def _vector_ids(
     return [row["id"] for row in rows]
 
 
-async def _keyword_chunk_ids(conn, eval_table: str, query: str, limit: int) -> list[int]:
+async def _keyword_chunk_ids(conn, query: str, limit: int) -> list[int]:
     terms = _extract_terms(query)
     if not terms:
         return []
@@ -174,7 +160,7 @@ async def _keyword_chunk_ids(conn, eval_table: str, query: str, limit: int) -> l
     rows = await conn.fetch(
         f"""
         SELECT id
-        FROM {_table(eval_table)}
+        FROM message_chunks
         WHERE {" OR ".join(clauses)}
         ORDER BY ({" + ".join(score_parts)}) DESC, end_at DESC
         LIMIT ${len(params)}
@@ -204,54 +190,18 @@ def _hybrid_rrf_ids(vector_ids: list[int], keyword_ids: list[int]) -> list[int]:
     ]
 
 
-async def _target_meta(conn, case_table: str, target_id: int) -> dict:
-    row = await conn.fetchrow(
-        f"""
-        SELECT id, channel_id, start_msg_id, end_msg_id
-        FROM {_table(case_table)}
-        WHERE id=$1
-        """,
-        target_id,
-    )
-    if not row:
-        raise ValueError(f"Target chunk not found: {case_table}.{target_id}")
-    return dict(row)
+def _hit(ids: list[int], target_id: int, k: int) -> bool:
+    return target_id in ids[:k]
 
 
-async def _overlap_hit(
-    conn,
-    eval_table: str,
-    target: dict,
-    ids: list[int],
-) -> bool:
-    if not ids:
-        return False
-    return await conn.fetchval(
-        f"""
-        SELECT EXISTS (
-            SELECT 1
-            FROM {_table(eval_table)}
-            WHERE id = ANY($1::bigint[])
-              AND channel_id = $2
-              AND start_msg_id <= $3
-              AND end_msg_id >= $4
-        )
-        """,
-        ids,
-        target["channel_id"],
-        target["end_msg_id"],
-        target["start_msg_id"],
-    )
-
-
-async def _expanded_context_ids(conn, eval_table: str, ids: list[int]) -> set[int]:
+async def _expanded_context_ids(conn, ids: list[int]) -> set[int]:
     if not ids:
         return set()
     rows = await conn.fetch(
-        f"""
+        """
         WITH selected AS (
             SELECT id, channel_id, start_msg_id, end_msg_id
-            FROM {_table(eval_table)}
+            FROM message_chunks
             WHERE id = ANY($1::bigint[])
         ),
         before_rows AS (
@@ -259,7 +209,7 @@ async def _expanded_context_ids(conn, eval_table: str, ids: list[int]) -> set[in
             FROM selected s
             JOIN LATERAL (
                 SELECT id
-                FROM {_table(eval_table)}
+                FROM message_chunks
                 WHERE channel_id = s.channel_id
                   AND end_msg_id < s.start_msg_id
                 ORDER BY end_msg_id DESC
@@ -271,7 +221,7 @@ async def _expanded_context_ids(conn, eval_table: str, ids: list[int]) -> set[in
             FROM selected s
             JOIN LATERAL (
                 SELECT id
-                FROM {_table(eval_table)}
+                FROM message_chunks
                 WHERE channel_id = s.channel_id
                   AND start_msg_id > s.end_msg_id
                 ORDER BY start_msg_id ASC
@@ -289,7 +239,7 @@ async def _expanded_context_ids(conn, eval_table: str, ids: list[int]) -> set[in
     return {row["context_id"] for row in rows}
 
 
-async def evaluate(cases: list[dict], eval_table: str, case_table: str) -> dict:
+async def evaluate(cases: list[dict]) -> dict:
     pool = await get_pool()
     embedder = EmbeddingService()
     vectors = await embedder.embed([case["query"] for case in cases])
@@ -310,62 +260,29 @@ async def evaluate(cases: list[dict], eval_table: str, case_table: str) -> dict:
     async with pool.acquire() as conn:
         for case, vector in zip(cases, vectors):
             target_id = int(case["target_id"])
-            target = await _target_meta(
-                conn,
-                case.get("target_table") or case_table,
-                target_id,
-            )
             literal = _embedding_literal(vector)
-            vector_ids = await _vector_ids(conn, eval_table, literal, 50)
-            keyword_ids = await _keyword_chunk_ids(
-                conn,
-                eval_table,
-                case["query"],
-                50,
-            )
+            vector_ids = await _vector_ids(conn, literal, 50)
+            keyword_ids = await _keyword_chunk_ids(conn, case["query"], 50)
             union_ids = list(dict.fromkeys(vector_ids + keyword_ids))
             hybrid_ids = _hybrid_rrf_ids(vector_ids, keyword_ids)
 
-            metrics["vector@5"].append(
-                await _overlap_hit(conn, eval_table, target, vector_ids[:5])
+            metrics["vector@5"].append(_hit(vector_ids, target_id, 5))
+            metrics["vector@10"].append(_hit(vector_ids, target_id, 10))
+            metrics["vector@50"].append(_hit(vector_ids, target_id, 50))
+            metrics["keyword_chunk@50"].append(_hit(keyword_ids, target_id, 50))
+            metrics["union_vector50_keyword50"].append(target_id in union_ids)
+            metrics["hybrid_rrf@5"].append(_hit(hybrid_ids, target_id, 5))
+            metrics["hybrid_rrf@10"].append(_hit(hybrid_ids, target_id, 10))
+            expanded_5 = await _expanded_context_ids(conn, hybrid_ids[:5])
+            expanded_10 = await _expanded_context_ids(conn, hybrid_ids[:10])
+            metrics["expanded_hybrid_rrf@5"].append(target_id in expanded_5)
+            metrics["expanded_hybrid_rrf@10"].append(target_id in expanded_10)
+            ranks.append(
+                vector_ids.index(target_id) + 1 if target_id in vector_ids else 999
             )
-            metrics["vector@10"].append(
-                await _overlap_hit(conn, eval_table, target, vector_ids[:10])
-            )
-            metrics["vector@50"].append(
-                await _overlap_hit(conn, eval_table, target, vector_ids)
-            )
-            metrics["keyword_chunk@50"].append(
-                await _overlap_hit(conn, eval_table, target, keyword_ids)
-            )
-            metrics["union_vector50_keyword50"].append(
-                await _overlap_hit(conn, eval_table, target, union_ids)
-            )
-            metrics["hybrid_rrf@5"].append(
-                await _overlap_hit(conn, eval_table, target, hybrid_ids[:5])
-            )
-            metrics["hybrid_rrf@10"].append(
-                await _overlap_hit(conn, eval_table, target, hybrid_ids[:10])
-            )
-            expanded_5 = await _expanded_context_ids(conn, eval_table, hybrid_ids[:5])
-            expanded_10 = await _expanded_context_ids(conn, eval_table, hybrid_ids[:10])
-            metrics["expanded_hybrid_rrf@5"].append(
-                await _overlap_hit(conn, eval_table, target, list(expanded_5))
-            )
-            metrics["expanded_hybrid_rrf@10"].append(
-                await _overlap_hit(conn, eval_table, target, list(expanded_10))
-            )
-            rank = 999
-            for idx, candidate_id in enumerate(vector_ids, start=1):
-                if await _overlap_hit(conn, eval_table, target, [candidate_id]):
-                    rank = idx
-                    break
-            ranks.append(rank)
 
     return {
         "cases": len(cases),
-        "eval_table": eval_table,
-        "case_table": case_table,
         "median_vector_rank_capped_999": median(ranks),
         **{name: mean(values) for name, values in metrics.items()},
     }
@@ -374,8 +291,6 @@ async def evaluate(cases: list[dict], eval_table: str, case_table: str) -> dict:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
-    parser.add_argument("--case-table", default="message_chunks")
-    parser.add_argument("--eval-table", default="message_chunks")
     parser.add_argument("--samples", type=int, default=100)
     parser.add_argument("--seed", default="sachikobot-rag-v1")
     parser.add_argument("--min-chars", type=int, default=180)
@@ -385,13 +300,12 @@ async def main() -> None:
     load_dotenv(".env")
     cases = await _load_or_create_cases(
         path=args.cases,
-        case_table=args.case_table,
         samples=args.samples,
         seed=args.seed,
         min_chars=args.min_chars,
         max_chars=args.max_chars,
     )
-    result = await evaluate(cases, args.eval_table, args.case_table)
+    result = await evaluate(cases)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     await close_pool()
 
