@@ -175,11 +175,20 @@ class MessageArchiveService:
         query: str = "",
         author: str | None = None,
         limit: int = 20,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
         if not terms and not author:
             return []
-        return await self._repo.search(guild_id, terms, author, limit)
+        return await self._repo.search(
+            guild_id,
+            terms,
+            author,
+            limit,
+            before_message_id=before_message_id,
+            exclude_mention_user_id=exclude_mention_user_id,
+        )
 
     async def keyword_chunk_search(
         self,
@@ -188,6 +197,8 @@ class MessageArchiveService:
         author: str | None = None,
         limit: int = 20,
         channel_id: int | None = None,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
         if not terms and not author:
@@ -198,6 +209,8 @@ class MessageArchiveService:
             limit=limit,
             author=author,
             channel_id=channel_id,
+            before_message_id=before_message_id,
+            exclude_mention_user_id=exclude_mention_user_id,
         )
 
     @staticmethod
@@ -251,6 +264,8 @@ class MessageArchiveService:
         context_after: int = 1,
         author: str | None = None,
         channel_id: int | None = None,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         semantic_matches = await self.semantic_search(
             guild_id,
@@ -259,6 +274,8 @@ class MessageArchiveService:
             candidate_limit=candidate_limit,
             author=author,
             channel_id=channel_id,
+            before_message_id=before_message_id,
+            exclude_mention_user_id=exclude_mention_user_id,
         )
         keyword_matches = await self.keyword_chunk_search(
             guild_id,
@@ -266,6 +283,8 @@ class MessageArchiveService:
             author=author,
             limit=candidate_limit,
             channel_id=channel_id,
+            before_message_id=before_message_id,
+            exclude_mention_user_id=exclude_mention_user_id,
         )
         ranked = self._merge_hybrid(semantic_matches, keyword_matches)
         if self._llm and query.strip() and len(ranked) > 1 and rerank_limit > 1:
@@ -452,6 +471,8 @@ class MessageArchiveService:
         candidate_limit: int = 50,
         author: str | None = None,
         channel_id: int | None = None,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         """쿼리를 임베딩해 의미적으로 가까운 대화 청크를 반환 (서버 전체)."""
         if not query.strip():
@@ -466,5 +487,7 @@ class MessageArchiveService:
             limit=max(limit, candidate_limit),
             author=author,
             channel_id=channel_id,
+            before_message_id=before_message_id,
+            exclude_mention_user_id=exclude_mention_user_id,
         )
         return candidates[:limit]

@@ -8,6 +8,7 @@ class BotRequest:
     guild_id: int
     channel_id: int
     message_id: int
+    bot_user_id: int
     user_id: int
     display_name: str
     content: str
@@ -56,6 +57,7 @@ def parse_message(
         guild_id=message.guild.id,
         channel_id=message.channel.id,
         message_id=message.id,
+        bot_user_id=bot_user.id,
         user_id=message.author.id,
         display_name=display_name,
         content=message.content,

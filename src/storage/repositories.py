@@ -95,6 +95,8 @@ class MessageRepository:
         terms: list[str],
         author: str | None = None,
         limit: int = 20,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         """content에 terms 일부(OR)를 포함하는 메시지를 점수순으로 반환 (서버 전체).
 
@@ -106,6 +108,14 @@ class MessageRepository:
         if author:
             params.append(f"%{author}%")
             conditions.append(f"author_name ILIKE ${len(params)}")
+        if before_message_id:
+            params.append(before_message_id)
+            conditions.append(f"message_id < ${len(params)}")
+        if exclude_mention_user_id:
+            params.append(f"%<@{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
+            params.append(f"%<@!{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
         term_conditions: list[str] = []
         score_parts: list[str] = []
         for term in terms:
@@ -224,6 +234,8 @@ class ChunkRepository:
         limit: int = 20,
         author: str | None = None,
         channel_id: int | None = None,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         """content에 terms 일부(OR)를 포함하는 대화 청크를 점수순으로 반환."""
         if not terms and not author:
@@ -238,6 +250,14 @@ class ChunkRepository:
         if channel_id:
             params.append(channel_id)
             conditions.append(f"channel_id = ${len(params)}")
+        if before_message_id:
+            params.append(before_message_id)
+            conditions.append(f"end_msg_id < ${len(params)}")
+        if exclude_mention_user_id:
+            params.append(f"%<@{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
+            params.append(f"%<@!{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
 
         term_conditions: list[str] = []
         score_parts: list[str] = []
@@ -339,6 +359,8 @@ class ChunkRepository:
         limit: int = 5,
         author: str | None = None,
         channel_id: int | None = None,
+        before_message_id: int | None = None,
+        exclude_mention_user_id: int | None = None,
     ) -> list[dict]:
         """쿼리 임베딩과 cosine 거리가 가까운 대화 청크를 반환 (서버 전체)."""
         pool = await get_pool()
@@ -350,6 +372,14 @@ class ChunkRepository:
         if channel_id:
             params.append(channel_id)
             conditions.append(f"channel_id = ${len(params)}")
+        if before_message_id:
+            params.append(before_message_id)
+            conditions.append(f"end_msg_id < ${len(params)}")
+        if exclude_mention_user_id:
+            params.append(f"%<@{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
+            params.append(f"%<@!{exclude_mention_user_id}>%")
+            conditions.append(f"content NOT ILIKE ${len(params)}")
         params.append(limit)
         rows = await pool.fetch(
             f"""

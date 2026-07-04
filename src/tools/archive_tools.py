@@ -61,6 +61,7 @@ class SearchChatHistoryTool(BaseTool):
                     "과거 대화를 근거로 답할 때는 관련 source_url을 함께 제시해라. "
                     "query에는 핵심 키워드나 주제를 넣어라. "
                     "특정 사람에 대한 질문('A는 뭘 좋아해?', 'A가 한 말')이면 author에 그 사람 이름을 넣어라. "
+                    "'누가 무슨 얘기했어?'처럼 말한 사람을 찾아야 하는 질문이면 author를 비워라. "
                     "결과의 시간(created_at/start_at)으로 '언제' 질문에 답할 수 있다. "
                     "검색 전 최신 기록까지 자동 갱신되며, 첫 사용 시 시간이 걸릴 수 있으니 say로 먼저 알려라."
                 ),
@@ -94,7 +95,12 @@ class SearchChatHistoryTool(BaseTool):
         # 검색은 서버(guild) 전체 기록 대상
         limit = min(int(args.get("limit", 20)), 50)
         keyword_matches = await self._archive.search(
-            request.guild_id, query, author, limit
+            request.guild_id,
+            query,
+            author,
+            limit,
+            before_message_id=request.message_id,
+            exclude_mention_user_id=request.bot_user_id,
         )
         hybrid_matches = []
         if query:
@@ -104,6 +110,8 @@ class SearchChatHistoryTool(BaseTool):
                 limit=min(limit, 10),
                 candidate_limit=50,
                 author=author,
+                before_message_id=request.message_id,
+                exclude_mention_user_id=request.bot_user_id,
             )
 
         return {
