@@ -194,6 +194,43 @@ def _hit(ids: list[int], target_id: int, k: int) -> bool:
     return target_id in ids[:k]
 
 
+async def _expanded_context_ids(conn, ids: list[int]) -> set[int]:
+    if not ids:
+        return set()
+    rows = await conn.fetch(
+        """
+        WITH selected AS (
+            SELECT id, channel_id, start_msg_id, end_msg_id
+            FROM message_chunks
+            WHERE id = ANY($1::bigint[])
+        ),
+        before_rows AS (
+            SELECT DISTINCT ON (s.id) s.id AS selected_id, c.id AS context_id
+            FROM selected s
+            JOIN message_chunks c
+              ON c.channel_id = s.channel_id
+             AND c.end_msg_id < s.start_msg_id
+            ORDER BY s.id, c.end_msg_id DESC
+        ),
+        after_rows AS (
+            SELECT DISTINCT ON (s.id) s.id AS selected_id, c.id AS context_id
+            FROM selected s
+            JOIN message_chunks c
+              ON c.channel_id = s.channel_id
+             AND c.start_msg_id > s.end_msg_id
+            ORDER BY s.id, c.start_msg_id ASC
+        )
+        SELECT id AS context_id FROM selected
+        UNION
+        SELECT context_id FROM before_rows
+        UNION
+        SELECT context_id FROM after_rows
+        """,
+        ids,
+    )
+    return {row["context_id"] for row in rows}
+
+
 async def evaluate(cases: list[dict]) -> dict:
     pool = await get_pool()
     embedder = EmbeddingService()
@@ -207,6 +244,8 @@ async def evaluate(cases: list[dict]) -> dict:
         "union_vector50_keyword50": [],
         "hybrid_rrf@5": [],
         "hybrid_rrf@10": [],
+        "expanded_hybrid_rrf@5": [],
+        "expanded_hybrid_rrf@10": [],
     }
     ranks = []
 
@@ -226,6 +265,10 @@ async def evaluate(cases: list[dict]) -> dict:
             metrics["union_vector50_keyword50"].append(target_id in union_ids)
             metrics["hybrid_rrf@5"].append(_hit(hybrid_ids, target_id, 5))
             metrics["hybrid_rrf@10"].append(_hit(hybrid_ids, target_id, 10))
+            expanded_5 = await _expanded_context_ids(conn, hybrid_ids[:5])
+            expanded_10 = await _expanded_context_ids(conn, hybrid_ids[:10])
+            metrics["expanded_hybrid_rrf@5"].append(target_id in expanded_5)
+            metrics["expanded_hybrid_rrf@10"].append(target_id in expanded_10)
             ranks.append(
                 vector_ids.index(target_id) + 1 if target_id in vector_ids else 999
             )

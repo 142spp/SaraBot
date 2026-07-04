@@ -246,6 +246,9 @@ class MessageArchiveService:
         *,
         candidate_limit: int = 50,
         rerank_limit: int = 10,
+        expand_context: bool = True,
+        context_before: int = 1,
+        context_after: int = 1,
         author: str | None = None,
         channel_id: int | None = None,
     ) -> list[dict]:
@@ -268,7 +271,15 @@ class MessageArchiveService:
         if self._llm and query.strip() and len(ranked) > 1 and rerank_limit > 1:
             reranked = await self._rerank_with_llm(query, ranked[:rerank_limit])
             ranked = reranked + ranked[rerank_limit:]
-        return ranked[:limit]
+        ranked = ranked[:limit]
+        if expand_context:
+            ranked = await self._chunks.expand_context(
+                guild_id,
+                ranked,
+                before=context_before,
+                after=context_after,
+            )
+        return ranked
 
     async def _rerank_with_llm(self, query: str, candidates: list[dict]) -> list[dict]:
         blocks = []

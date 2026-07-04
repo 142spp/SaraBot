@@ -243,7 +243,8 @@ class ChunkRepository:
         score_sql = " + ".join(score_parts) if score_parts else "0"
         rows = await pool.fetch(
             f"""
-            SELECT id, channel_id, authors, content, start_at, end_at,
+            SELECT id, channel_id, start_msg_id, end_msg_id,
+                   authors, content, start_at, end_at,
                    ({score_sql}) AS keyword_score
             FROM message_chunks
             WHERE {" AND ".join(conditions)}
@@ -256,6 +257,8 @@ class ChunkRepository:
             {
                 "id": r["id"],
                 "channel_id": r["channel_id"],
+                "start_msg_id": r["start_msg_id"],
+                "end_msg_id": r["end_msg_id"],
                 "authors": r["authors"],
                 "content": r["content"],
                 "start_at": r["start_at"].isoformat(),
@@ -332,7 +335,8 @@ class ChunkRepository:
         params.append(limit)
         rows = await pool.fetch(
             f"""
-            SELECT id, channel_id, authors, content, start_at, end_at,
+            SELECT id, channel_id, start_msg_id, end_msg_id,
+                   authors, content, start_at, end_at,
                    embedding <=> $2::vector AS distance
             FROM message_chunks
             WHERE {" AND ".join(conditions)}
@@ -345,6 +349,8 @@ class ChunkRepository:
             {
                 "id": r["id"],
                 "channel_id": r["channel_id"],
+                "start_msg_id": r["start_msg_id"],
+                "end_msg_id": r["end_msg_id"],
                 "authors": r["authors"],
                 "content": r["content"],
                 "start_at": r["start_at"].isoformat(),
@@ -353,6 +359,65 @@ class ChunkRepository:
             }
             for r in rows
         ]
+
+    async def expand_context(
+        self,
+        guild_id: int,
+        matches: list[dict],
+        before: int = 1,
+        after: int = 1,
+        max_chars: int = 1800,
+    ) -> list[dict]:
+        """최종 검색 결과마다 같은 채널의 앞뒤 청크를 붙여 답변 문맥을 보강한다."""
+        if not matches:
+            return []
+
+        pool = await get_pool()
+        expanded: list[dict] = []
+        async with pool.acquire() as conn:
+            for match in matches:
+                before_rows = await conn.fetch(
+                    """
+                    SELECT id, authors, content, start_at, end_at
+                    FROM message_chunks
+                    WHERE guild_id=$1 AND channel_id=$2 AND end_msg_id < $3
+                    ORDER BY end_msg_id DESC
+                    LIMIT $4
+                    """,
+                    guild_id,
+                    match["channel_id"],
+                    match["start_msg_id"],
+                    before,
+                )
+                after_rows = await conn.fetch(
+                    """
+                    SELECT id, authors, content, start_at, end_at
+                    FROM message_chunks
+                    WHERE guild_id=$1 AND channel_id=$2 AND start_msg_id > $3
+                    ORDER BY start_msg_id ASC
+                    LIMIT $4
+                    """,
+                    guild_id,
+                    match["channel_id"],
+                    match["end_msg_id"],
+                    after,
+                )
+                chunks = list(reversed(before_rows)) + [match] + list(after_rows)
+                context_parts: list[str] = []
+                context_ids: list[int] = []
+                for chunk in chunks:
+                    context_ids.append(chunk["id"])
+                    text = (chunk["content"] or "").strip()
+                    if text:
+                        context_parts.append(text)
+                context = "\n---\n".join(context_parts)
+                item = {
+                    **match,
+                    "context_chunk_ids": context_ids,
+                    "context_content": context[:max_chars],
+                }
+                expanded.append(item)
+        return expanded
 
 
 class GuildConfigRepository:
