@@ -131,43 +131,40 @@ class MessageArchiveService:
         return "\n".join(picked) if picked else text
 
     @staticmethod
-    def _search_evidence_payload(
+    def _search_evidence_markdown_line(
         item: dict, index: int, terms: list[str] | None = None
-    ) -> dict:
+    ) -> str:
         source_url = item.get("source_url")
-        title = f"검색 근거 {index}"
+        date_label = None
         if item.get("start_at_kst"):
-            title += f" · {item['start_at_kst'][:10]} KST"
+            date_label = f"{item['start_at_kst'][:16]} KST"
         elif item.get("created_at_kst"):
-            title += f" · {item['created_at_kst'][:10]} KST"
+            date_label = f"{item['created_at_kst'][:16]} KST"
         elif item.get("start_at"):
-            title += f" · {item['start_at'][:10]}"
+            date_label = item["start_at"][:16]
         elif item.get("created_at"):
-            title += f" · {item['created_at'][:10]}"
+            date_label = item["created_at"][:16]
+        else:
+            date_label = "시간 불명"
 
         raw_text = MessageArchiveService._evidence_preview(item, terms or [])
         authors = item.get("authors") or item.get("author")
-        description = MessageArchiveService._clip_embed_text(raw_text)
-        if authors and item.get("author"):
-            description = MessageArchiveService._clip_embed_text(
-                f"{authors}: {raw_text}"
-            )
-        payload = {
-            "title": title,
-            "url": source_url,
-            "description": description,
-            "fields": [],
-        }
-        return payload
+        preview = MessageArchiveService._clip_embed_text(raw_text)
+        quoted = "\n".join(f"> {line}" for line in preview.splitlines())
+        author_label = f" `{authors}`" if authors else ""
+        title = f"`{date_label}`{author_label}"
+        if source_url:
+            title = f"[{title}]({source_url})"
+        return f"{index}. {title}\n{quoted}"
 
-    def build_search_evidence_embeds(
+    def build_search_evidence_markdown(
         self,
         keyword_matches: list[dict],
         hybrid_matches: list[dict],
         query: str = "",
         limit: int = 3,
-    ) -> list[dict]:
-        """검색 상위 근거를 최종 응답에 붙일 embed payload로 만든다."""
+    ) -> str:
+        """검색 상위 근거를 최종 응답에 붙일 마크다운 항목으로 만든다."""
         selected: list[dict] = []
         seen_urls: set[str] = set()
         for item in keyword_matches + hybrid_matches:
@@ -180,10 +177,11 @@ class MessageArchiveService:
                 break
 
         terms = extract_search_terms(query)
-        return [
-            self._search_evidence_payload(item, index, terms)
+        lines = [
+            self._search_evidence_markdown_line(item, index, terms)
             for index, item in enumerate(selected, start=1)
         ]
+        return "\n\n".join(lines)
 
     async def ingest_channel(self, channel_id: int, notify: bool = True) -> dict:
         """현재 채널의 전체 기록을 DB에 적재한다. 이미 저장분이 있으면 그 이후만(증분).

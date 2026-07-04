@@ -89,9 +89,9 @@ class SearchChatHistoryTool(BaseTool):
                     "keyword_matches(핵심 단어가 들어간 개별 메시지), "
                     "hybrid_matches(키워드 검색과 의미 검색을 합쳐 재정렬한 대화 덩어리). "
                     "둘 다 참고해서 답해라. 돌려 말한 질문도 hybrid_matches가 관련 대화를 찾아준다. "
-                    "상위 근거는 evidence_embeds로 함께 돌려준다. "
+                    "상위 근거는 evidence_markdown으로 함께 돌려준다. "
                     "검색 결과의 source_url/context_sources는 원본 Discord 메시지 근거다. "
-                    "respond_text에서는 핵심 요약을 말하고 evidence_embeds를 embeds에 그대로 넣어라. "
+                    "respond_text에서는 핵심 요약만 말해라. 근거 마크다운은 시스템이 자동으로 붙인다. "
                     "query에는 검색 대상인 고유명사·작품명·사람명·음식명·핵심 명사만 넣어라. "
                     "'예전에', '얘기', '기록', '찾아줘', '언제', '누가' 같은 요청어·조사·동사는 빼라. "
                     "OR/AND 같은 연산자를 쓰지 말고 핵심어만 공백으로 나열해라. "
@@ -165,7 +165,7 @@ class SearchChatHistoryTool(BaseTool):
                 hybrid_error = str(e)
                 logger.warning(f"hybrid archive search failed: {e}")
 
-        evidence_embeds = self._archive.build_search_evidence_embeds(
+        evidence_markdown = self._archive.build_search_evidence_markdown(
             keyword_matches,
             hybrid_matches,
             query=query,
@@ -176,7 +176,7 @@ class SearchChatHistoryTool(BaseTool):
             "ok": True,
             "keyword_matches": keyword_matches,
             "hybrid_matches": hybrid_matches,
-            "evidence_embeds": evidence_embeds,
+            "evidence_markdown": evidence_markdown,
             "hybrid_error": hybrid_error,
             "author_filter": author,
             "date_filter_kst": {

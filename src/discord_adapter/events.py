@@ -31,37 +31,9 @@ def _split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
     return chunks or [text]
 
 
-def _to_discord_embed(payload: dict) -> discord.Embed:
-    embed = discord.Embed(
-        title=(payload.get("title") or None),
-        url=(payload.get("url") or None),
-        description=(payload.get("description") or None),
-        color=discord.Color.blurple(),
-    )
-    for field in payload.get("fields") or []:
-        name = str(field.get("name") or "")[:256]
-        value = str(field.get("value") or "")[:1024]
-        if name and value:
-            embed.add_field(
-                name=name,
-                value=value,
-                inline=bool(field.get("inline", False)),
-            )
-    footer = payload.get("footer")
-    if footer:
-        embed.set_footer(text=str(footer)[:2048])
-    return embed
-
-
-async def _reply_chunked(
-    message: discord.Message, text: str, embeds: list[dict] | None = None
-) -> None:
+async def _reply_chunked(message: discord.Message, text: str) -> None:
     parts = _split_message(text)
-    discord_embeds = [_to_discord_embed(item) for item in (embeds or [])[:10]]
-    if discord_embeds:
-        await message.reply(parts[0], embeds=discord_embeds)
-    else:
-        await message.reply(parts[0])
+    await message.reply(parts[0])
     for part in parts[1:]:
         await message.channel.send(part)
 
@@ -124,7 +96,7 @@ def register_events(client: discord.Client, bot_core: BotCore) -> None:
                 if response.message:
                     preview = response.message[:100].replace("\n", " ")
                     logger.info(f"→ #{channel_name}: {preview!r}")
-                    await _reply_chunked(message, response.message, response.embeds)
+                    await _reply_chunked(message, response.message)
                 else:
                     logger.warning(f"Empty response for message {message.id}")
             except Exception as e:

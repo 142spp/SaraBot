@@ -1,8 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class BotResponse:
     message: str
-    embeds: list[dict] = field(default_factory=list)
-

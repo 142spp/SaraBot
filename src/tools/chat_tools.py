@@ -62,7 +62,7 @@ class RespondTextTool(BaseTool):
                 "name": "respond_text",
                 "description": (
                     "사용자에게 최종 답변을 보낸다. 항상 마지막에 호출한다. "
-                    "검색 근거 embed는 시스템이 자동으로 붙이므로 직접 만들거나 인자로 넣지 마라."
+                    "검색 근거 마크다운은 시스템이 자동으로 붙이므로 직접 만들거나 반복하지 마라."
                 ),
                 "parameters": {
                     "type": "object",

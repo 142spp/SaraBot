@@ -25,6 +25,13 @@ def _now_stamp() -> str:
     return f"{now:%Y년 %m월 %d일} ({wd}) {now:%H:%M} KST"
 
 
+def _with_evidence_markdown(message: str, evidence_markdown: str) -> str:
+    evidence_markdown = (evidence_markdown or "").strip()
+    if not evidence_markdown:
+        return message
+    return f"{message.rstrip()}\n\n**근거**\n{evidence_markdown}"
+
+
 class Agent:
     def __init__(
         self,
@@ -91,7 +98,7 @@ class Agent:
             {"role": "user", "content": user_content}
         ]
         tools = self._executor.get_definitions()
-        pending_embeds: list[dict] = []
+        pending_evidence_markdown = ""
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             logger.info(f"Agent step {step}/{MAX_AGENT_STEPS}")
@@ -140,10 +147,10 @@ class Agent:
                     self._conversation_memory.add_tool_result(
                         request.channel_id, tool_name, args, result
                     )
-                if result.get("evidence_embeds"):
-                    pending_embeds = result["evidence_embeds"]
+                if result.get("evidence_markdown"):
+                    pending_evidence_markdown = result["evidence_markdown"]
                 elif tool_name in {"search_chat_history", "web_search"}:
-                    pending_embeds = []
+                    pending_evidence_markdown = ""
 
                 messages.append(
                     {
@@ -154,8 +161,10 @@ class Agent:
                 )
 
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
-                    msg = result.get("message", "")
-                    embeds = pending_embeds
+                    msg = _with_evidence_markdown(
+                        result.get("message", ""),
+                        pending_evidence_markdown,
+                    )
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
                             request.channel_id,
@@ -170,7 +179,7 @@ class Agent:
                             )
                             logger.info("Image analysis stored")
                     logger.info(f"Agent done | terminal tool={tool_name}")
-                    return BotResponse(msg, embeds=embeds)
+                    return BotResponse(msg)
 
         logger.warning(f"Agent step limit reached ({MAX_AGENT_STEPS})")
         return BotResponse("요청을 처리하다가 단계가 너무 길어져서 중단했어.")
