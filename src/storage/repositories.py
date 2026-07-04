@@ -420,6 +420,29 @@ class ChunkRepository:
         return expanded
 
 
+class SearchDocRepository:
+    async def insert_docs(self, rows: list[tuple]) -> None:
+        """rows: guild_id, channel_id, start/end chunk/msg ids, time range,
+        authors, source_content, search_text, embedding_literal."""
+        if not rows:
+            return
+        pool = await get_pool()
+        await pool.executemany(
+            """
+            INSERT INTO message_chunk_search_docs
+                (guild_id, channel_id, start_chunk_id, end_chunk_id,
+                 start_msg_id, end_msg_id, start_at, end_at, authors,
+                 source_content, search_text, embedding)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::vector)
+            """,
+            rows,
+        )
+
+    async def count(self) -> int:
+        pool = await get_pool()
+        return await pool.fetchval("SELECT count(*) FROM message_chunk_search_docs")
+
+
 class GuildConfigRepository:
     async def get_persona(self, guild_id: int) -> str | None:
         pool = await get_pool()
