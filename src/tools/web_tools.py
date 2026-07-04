@@ -23,7 +23,8 @@ class WebSearchTool(BaseTool):
                     "모르는 사람/용어/제품 등 채팅 기록 밖의 정보가 필요할 때 사용. "
                     "상위 출처는 evidence_items로 함께 돌려준다. "
                     "respond_text에서는 evidence_items의 id를 {{E1}}처럼 답변 본문 안에 "
-                    "자연스럽게 섞어라. 실제 링크·제목·발행일은 시스템이 치환한다. "
+                    "자연스럽게 섞어라. 실제 링크·제목·발행일은 "
+                    "시스템이 코드블럭 마크다운 근거로 치환한다. "
                     "별도의 하단 출처 섹션으로 몰아넣지 마라. 없는 placeholder나 출처는 만들지 마라. "
                     "(서버 채팅 기록 검색은 search_chat_history를 쓴다.)"
                 ),

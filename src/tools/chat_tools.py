@@ -64,7 +64,8 @@ class RespondTextTool(BaseTool):
                     "사용자에게 최종 답변을 보낸다. 항상 마지막에 호출한다. "
                     "검색 결과를 근거로 답할 때는 evidence_items의 id를 {{E1}}처럼 "
                     "답변 본문 안에 자연스럽게 섞어라. 실제 URL·시간·작성자·짧은 인용은 "
-                    "시스템이 치환한다. evidence_items에 없는 근거 placeholder는 만들지 마라."
+                    "시스템이 코드블럭 마크다운 근거로 치환한다. "
+                    "evidence_items에 없는 근거 placeholder는 만들지 마라."
                 ),
                 "parameters": {
                     "type": "object",

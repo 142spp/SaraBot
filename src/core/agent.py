@@ -17,7 +17,7 @@ MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
 EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
 EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
-MAX_INLINE_EVIDENCE_QUOTE_CHARS = 80
+MAX_EVIDENCE_QUOTE_CHARS = 120
 EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
@@ -30,33 +30,43 @@ def _now_stamp() -> str:
     return f"{now:%Y년 %m월 %d일} ({wd}) {now:%H:%M} KST"
 
 
-def _clip_inline_evidence_quote(text: str) -> str:
+def _clip_evidence_text(text: str) -> str:
     text = " ".join((text or "").split())
-    if len(text) <= MAX_INLINE_EVIDENCE_QUOTE_CHARS:
+    text = text.replace("```", "'''")
+    if len(text) <= MAX_EVIDENCE_QUOTE_CHARS:
         return text
-    return text[: MAX_INLINE_EVIDENCE_QUOTE_CHARS - 1].rstrip() + "…"
+    return text[: MAX_EVIDENCE_QUOTE_CHARS - 1].rstrip() + "…"
 
 
-def _sanitize_markdown_label(text: str) -> str:
+def _sanitize_evidence_text(text: str) -> str:
     text = " ".join((text or "근거").split())
-    return text.replace("[", "").replace("]", "")
+    return text.replace("```", "'''")
+
+
+def _evidence_ref_label(item: dict) -> str:
+    raw_id = str(item.get("id") or "").strip()
+    match = re.fullmatch(r"E(\d+)", raw_id)
+    if match:
+        return f"근거 {match.group(1)}"
+    return "근거"
 
 
 def _format_inline_evidence(item: dict) -> str:
-    label = _sanitize_markdown_label(str(item.get("label") or "근거"))
+    ref_label = _evidence_ref_label(item)
+    label = _sanitize_evidence_text(str(item.get("label") or ""))
     url = str(item.get("url") or "").strip()
-
     if item.get("kind") == "web" and item.get("published_date"):
         label = f"{label}, {item['published_date']}"
 
-    linked_label = f"[{label}]({url})" if url else label
-    if item.get("kind") == "web":
-        return f"({linked_label})"
-
-    quote = _clip_inline_evidence_quote(str(item.get("quote") or ""))
-    if quote:
-        return f'({linked_label}: "{quote}")'
-    return f"({linked_label})"
+    title = f"{ref_label} | {label}" if label else ref_label
+    lines = [title]
+    if item.get("kind") == "chat":
+        quote = _clip_evidence_text(str(item.get("quote") or ""))
+        if quote:
+            lines.append(quote)
+    if url:
+        lines.append(url)
+    return "\n```text\n" + "\n".join(lines) + "\n```\n"
 
 
 def _replace_evidence_placeholders(
@@ -69,12 +79,18 @@ def _replace_evidence_placeholders(
         if item.get("id")
     }
     for token, replacement in replacements.items():
-        message = message.replace(token, replacement)
+        if token not in message:
+            continue
+        item_id = token[2:-2]
+        ref_text = f"({_evidence_ref_label({'id': item_id})})"
+        message = message.replace(token, replacement, 1)
+        message = message.replace(token, ref_text)
 
     if EVIDENCE_PLACEHOLDER_RE.search(message):
         logger.warning("Unknown evidence placeholder in final response")
         message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
 
+    message = re.sub(r"(```)\n[ \t]*[.。]", r"\1", message)
     message = re.sub(r" +([,.!?])", r"\1", message)
     return re.sub(r" {2,}", " ", message).strip()
 
