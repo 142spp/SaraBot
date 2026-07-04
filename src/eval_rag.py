@@ -21,6 +21,7 @@ from openai import AsyncOpenAI
 
 import config
 from services.embedding_service import EmbeddingService
+from services.local_embedding_service import LocalEmbeddingService
 from storage.db import close_pool, get_pool
 
 
@@ -127,13 +128,20 @@ async def _load_or_create_cases(
     return cases
 
 
-async def _vector_ids(conn, embedding_literal: str, limit: int) -> list[int]:
+async def _vector_ids(
+    conn,
+    embedding_literal: str,
+    limit: int,
+    column: str = "embedding",
+) -> list[int]:
+    if column not in {"embedding", "embedding_bge_m3"}:
+        raise ValueError(f"Unsupported embedding column: {column}")
     rows = await conn.fetch(
-        """
+        f"""
         SELECT id
         FROM message_chunks
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> $1::vector ASC
+        WHERE {column} IS NOT NULL
+        ORDER BY {column} <=> $1::vector ASC
         LIMIT $2
         """,
         embedding_literal,
@@ -239,10 +247,19 @@ async def _expanded_context_ids(conn, ids: list[int]) -> set[int]:
     return {row["context_id"] for row in rows}
 
 
-async def evaluate(cases: list[dict]) -> dict:
+async def evaluate(cases: list[dict], local_bge_m3: bool = False) -> dict:
     pool = await get_pool()
-    embedder = EmbeddingService()
-    vectors = await embedder.embed([case["query"] for case in cases])
+    queries = [case["query"] for case in cases]
+    if local_bge_m3:
+        embedder = LocalEmbeddingService()
+        vectors = await embedder.embed_queries(queries)
+        embedding_column = "embedding_bge_m3"
+        mode = "bge-m3"
+    else:
+        embedder = EmbeddingService()
+        vectors = await embedder.embed(queries)
+        embedding_column = "embedding"
+        mode = "openai"
 
     metrics = {
         "vector@5": [],
@@ -261,7 +278,7 @@ async def evaluate(cases: list[dict]) -> dict:
         for case, vector in zip(cases, vectors):
             target_id = int(case["target_id"])
             literal = _embedding_literal(vector)
-            vector_ids = await _vector_ids(conn, literal, 50)
+            vector_ids = await _vector_ids(conn, literal, 50, embedding_column)
             keyword_ids = await _keyword_chunk_ids(conn, case["query"], 50)
             union_ids = list(dict.fromkeys(vector_ids + keyword_ids))
             hybrid_ids = _hybrid_rrf_ids(vector_ids, keyword_ids)
@@ -283,6 +300,7 @@ async def evaluate(cases: list[dict]) -> dict:
 
     return {
         "cases": len(cases),
+        "embedding_mode": mode,
         "median_vector_rank_capped_999": median(ranks),
         **{name: mean(values) for name, values in metrics.items()},
     }
@@ -295,6 +313,7 @@ async def main() -> None:
     parser.add_argument("--seed", default="sachikobot-rag-v1")
     parser.add_argument("--min-chars", type=int, default=180)
     parser.add_argument("--max-chars", type=int, default=900)
+    parser.add_argument("--local-bge-m3", action="store_true")
     args = parser.parse_args()
 
     load_dotenv(".env")
@@ -305,7 +324,7 @@ async def main() -> None:
         min_chars=args.min_chars,
         max_chars=args.max_chars,
     )
-    result = await evaluate(cases)
+    result = await evaluate(cases, local_bge_m3=args.local_bge_m3)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     await close_pool()
 
