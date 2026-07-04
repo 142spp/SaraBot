@@ -24,10 +24,9 @@ def _web_evidence_embeds(results: list[dict], limit: int = 3) -> list[dict]:
         url = item.get("url")
         if not url:
             continue
-        fields = [{"name": "출처", "value": f"[원문 보기]({url})", "inline": False}]
+        fields = []
         if item.get("published_date"):
-            fields.insert(
-                0,
+            fields.append(
                 {
                     "name": "발행일",
                     "value": str(item["published_date"]),
@@ -40,7 +39,6 @@ def _web_evidence_embeds(results: list[dict], limit: int = 3) -> list[dict]:
                 "url": url,
                 "description": _clip(item.get("content") or ""),
                 "fields": fields,
-                "footer": "web_search",
             }
         )
     return embeds

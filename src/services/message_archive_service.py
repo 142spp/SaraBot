@@ -137,23 +137,18 @@ class MessageArchiveService:
             title += f" · {item['created_at'][:10]}"
 
         raw_text = MessageArchiveService._evidence_preview(item, terms or [])
+        authors = item.get("authors") or item.get("author")
+        description = MessageArchiveService._clip_embed_text(raw_text)
+        if authors and item.get("author"):
+            description = MessageArchiveService._clip_embed_text(
+                f"{authors}: {raw_text}"
+            )
         payload = {
             "title": title,
             "url": source_url,
-            "description": MessageArchiveService._clip_embed_text(raw_text),
+            "description": description,
             "fields": [],
         }
-        authors = item.get("authors") or item.get("author")
-        if authors:
-            payload["fields"].append(
-                {"name": "작성자", "value": str(authors)[:1024], "inline": False}
-            )
-        if source_url:
-            payload["fields"].append(
-                {"name": "원문", "value": f"[메시지로 이동]({source_url})", "inline": False}
-            )
-        if item.get("retrieval_sources"):
-            payload["footer"] = f"검색 방식: {', '.join(item['retrieval_sources'])}"
         return payload
 
     def build_search_evidence_embeds(
