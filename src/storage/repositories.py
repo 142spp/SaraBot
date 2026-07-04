@@ -92,7 +92,7 @@ class MessageRepository:
         author: str | None = None,
         limit: int = 20,
     ) -> list[dict]:
-        """content에 terms를 모두(AND) 포함하는 메시지를 최신순으로 반환 (서버 전체).
+        """content에 terms 일부(OR)를 포함하는 메시지를 점수순으로 반환 (서버 전체).
 
         author가 주어지면 작성자 이름(부분일치)으로도 필터링한다.
         """
@@ -102,14 +102,23 @@ class MessageRepository:
         if author:
             params.append(f"%{author}%")
             conditions.append(f"author_name ILIKE ${len(params)}")
+        term_conditions: list[str] = []
+        score_parts: list[str] = []
         for term in terms:
             params.append(f"%{term}%")
-            conditions.append(f"content ILIKE ${len(params)}")
+            term_conditions.append(f"content ILIKE ${len(params)}")
+            score_parts.append(
+                f"CASE WHEN content ILIKE ${len(params)} THEN 1 ELSE 0 END"
+            )
+        if term_conditions:
+            conditions.append(f"({' OR '.join(term_conditions)})")
         params.append(limit)
+        score_sql = " + ".join(score_parts) if score_parts else "0"
         sql = (
-            "SELECT author_name, content, is_bot, created_at FROM messages "
+            f"SELECT author_name, content, is_bot, created_at, ({score_sql}) AS keyword_score "
+            "FROM messages "
             f"WHERE {' AND '.join(conditions)} "
-            f"ORDER BY created_at DESC LIMIT ${len(params)}"
+            f"ORDER BY keyword_score DESC, created_at DESC LIMIT ${len(params)}"
         )
         rows = await pool.fetch(sql, *params)
         return [
@@ -118,6 +127,7 @@ class MessageRepository:
                 "is_bot": r["is_bot"],
                 "content": r["content"],
                 "created_at": r["created_at"].isoformat(),
+                "keyword_score": r["keyword_score"],
             }
             for r in rows
         ]
@@ -195,6 +205,65 @@ class ChunkRepository:
             """,
             rows,
         )
+
+    async def keyword_search(
+        self,
+        guild_id: int,
+        terms: list[str],
+        limit: int = 20,
+        author: str | None = None,
+        channel_id: int | None = None,
+    ) -> list[dict]:
+        """content에 terms 일부(OR)를 포함하는 대화 청크를 점수순으로 반환."""
+        if not terms and not author:
+            return []
+
+        pool = await get_pool()
+        conditions = ["guild_id = $1"]
+        params: list = [guild_id]
+        if author:
+            params.append(f"%{author}%")
+            conditions.append(f"authors ILIKE ${len(params)}")
+        if channel_id:
+            params.append(channel_id)
+            conditions.append(f"channel_id = ${len(params)}")
+
+        term_conditions: list[str] = []
+        score_parts: list[str] = []
+        for term in terms:
+            params.append(f"%{term}%")
+            term_conditions.append(f"content ILIKE ${len(params)}")
+            score_parts.append(
+                f"CASE WHEN content ILIKE ${len(params)} THEN 1 ELSE 0 END"
+            )
+        if term_conditions:
+            conditions.append(f"({' OR '.join(term_conditions)})")
+
+        params.append(limit)
+        score_sql = " + ".join(score_parts) if score_parts else "0"
+        rows = await pool.fetch(
+            f"""
+            SELECT id, channel_id, authors, content, start_at, end_at,
+                   ({score_sql}) AS keyword_score
+            FROM message_chunks
+            WHERE {" AND ".join(conditions)}
+            ORDER BY keyword_score DESC, end_at DESC
+            LIMIT ${len(params)}
+            """,
+            *params,
+        )
+        return [
+            {
+                "id": r["id"],
+                "channel_id": r["channel_id"],
+                "authors": r["authors"],
+                "content": r["content"],
+                "start_at": r["start_at"].isoformat(),
+                "end_at": r["end_at"].isoformat(),
+                "keyword_score": r["keyword_score"],
+            }
+            for r in rows
+        ]
 
     async def recall_this_day(
         self,

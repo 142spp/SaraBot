@@ -15,6 +15,41 @@ CHUNK_GAP = timedelta(minutes=10)  # 이 간격 넘으면 새 대화 덩어리 (
 CHUNK_MAX_MESSAGES = 20  # 한 덩어리 최대 메시지 수 (버스트 p90=26, 대형만 분할)
 MAX_MSG_CHARS = 1000  # 메시지 1개 임베딩 텍스트 상한 (긴 붙여넣기/봇 출력 대비)
 MAX_CHUNK_CHARS = 4000  # 청크 합본 상한 (임베딩 8192토큰 한도 안전선)
+SEARCH_STOPWORDS = {
+    "이",
+    "그",
+    "저",
+    "것",
+    "거",
+    "뭐",
+    "무슨",
+    "언제",
+    "어디",
+    "누가",
+    "누구",
+    "왜",
+    "어떻게",
+    "대해",
+    "관련",
+    "예전",
+    "옛날",
+    "했어",
+    "한거",
+    "얘기",
+    "이야기",
+    "대화",
+    "말했던",
+    "말한",
+    "기억",
+    "찾아줘",
+    "알려줘",
+    "궁금해",
+}
+
+
+def extract_search_terms(query: str, limit: int = 8) -> list[str]:
+    raw = re.findall(r"[0-9A-Za-z가-힣]{2,}", query)
+    return [term for term in raw if term not in SEARCH_STOPWORDS][:limit]
 
 
 class MessageArchiveService:
@@ -137,10 +172,29 @@ class MessageArchiveService:
         author: str | None = None,
         limit: int = 20,
     ) -> list[dict]:
-        terms = query.split()
+        terms = extract_search_terms(query)
         if not terms and not author:
             return []
         return await self._repo.search(guild_id, terms, author, limit)
+
+    async def keyword_chunk_search(
+        self,
+        guild_id: int,
+        query: str = "",
+        author: str | None = None,
+        limit: int = 20,
+        channel_id: int | None = None,
+    ) -> list[dict]:
+        terms = extract_search_terms(query)
+        if not terms and not author:
+            return []
+        return await self._chunks.keyword_search(
+            guild_id,
+            terms,
+            limit=limit,
+            author=author,
+            channel_id=channel_id,
+        )
 
     async def sample_user_messages(
         self, guild_id: int, author: str, recent: int = 50, even: int = 250
