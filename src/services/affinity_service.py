@@ -5,13 +5,21 @@ logger = get_logger(__name__)
 
 
 def affinity_band(score: int) -> str:
+    if score <= 12:
+        return "극혐"
     if score <= 25:
         return "싫어함"
+    if score <= 37:
+        return "불편함"
     if score <= 50:
         return "그냥저냥"
+    if score <= 62:
+        return "호감"
     if score <= 75:
         return "좋아함"
-    return "완전 좋아함"
+    if score <= 87:
+        return "많이 좋아함"
+    return "완전 아낌"
 
 
 class AffinityService:
