@@ -113,10 +113,10 @@ def _replace_evidence_placeholders(
         logger.warning("Unknown evidence placeholder in final response")
         message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
 
+    field_items = evidence_items if used_ids else []
     fields = [
         field
-        for item in evidence_items
-        if item.get("id") in used_ids
+        for item in field_items
         for field in [_format_evidence_field(item)]
         if field
     ]
