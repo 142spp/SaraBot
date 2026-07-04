@@ -47,12 +47,21 @@ SEARCH_STOPWORDS = {
     "찾아봐",
     "알려줘",
     "궁금해",
+    "나",
+    "내",
+    "너",
 }
 
 
 def extract_search_terms(query: str, limit: int = 8) -> list[str]:
-    raw = re.findall(r"[0-9A-Za-z가-힣]{2,}", query)
-    return [term for term in raw if term.lower() not in SEARCH_STOPWORDS][:limit]
+    raw = re.findall(r"[0-9A-Za-z가-힣]+", query)
+    terms: list[str] = []
+    for term in raw:
+        if term.lower() in SEARCH_STOPWORDS:
+            continue
+        if len(term) >= 2 or re.fullmatch(r"[가-힣]", term):
+            terms.append(term)
+    return terms[:limit]
 
 
 def _rrf(rank: int, k: int = 60) -> float:
@@ -266,6 +275,8 @@ class MessageArchiveService:
         date_to=None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
+        if query.strip() and not terms:
+            return []
         if not terms and not author:
             return []
         return await self._repo.search(
@@ -292,6 +303,8 @@ class MessageArchiveService:
         date_to=None,
     ) -> list[dict]:
         terms = extract_search_terms(query)
+        if query.strip() and not terms:
+            return []
         if not terms and not author:
             return []
         return await self._chunks.keyword_search(

@@ -142,6 +142,8 @@ class Agent:
                     )
                 if result.get("evidence_embeds"):
                     pending_embeds = result["evidence_embeds"]
+                elif tool_name in {"search_chat_history", "web_search"}:
+                    pending_embeds = []
 
                 messages.append(
                     {
@@ -153,7 +155,7 @@ class Agent:
 
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
                     msg = result.get("message", "")
-                    embeds = result.get("embeds") or pending_embeds
+                    embeds = pending_embeds
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
                             request.channel_id,

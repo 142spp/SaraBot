@@ -62,29 +62,12 @@ class RespondTextTool(BaseTool):
                 "name": "respond_text",
                 "description": (
                     "사용자에게 최종 답변을 보낸다. 항상 마지막에 호출한다. "
-                    "search_chat_history 결과에 evidence_embeds가 있으면 embeds에 그대로 넣어 "
-                    "텍스트와 근거를 한 메시지로 함께 보여준다."
+                    "검색 근거 embed는 시스템이 자동으로 붙이므로 직접 만들거나 인자로 넣지 마라."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "message": {"type": "string"},
-                        "embeds": {
-                            "type": "array",
-                            "description": (
-                                "선택. search_chat_history가 반환한 evidence_embeds를 그대로 넣는다."
-                            ),
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "title": {"type": "string"},
-                                    "description": {"type": "string"},
-                                    "url": {"type": "string"},
-                                    "fields": {"type": "array"},
-                                    "footer": {"type": "string"},
-                                },
-                            },
-                        },
                         "image_notes": {
                             "type": "string",
                             "description": (
@@ -106,9 +89,6 @@ class RespondTextTool(BaseTool):
             # message 누락 시 크래시 대신 루프 계속 → LLM이 다시 제대로 호출
             return {"ok": False, "error": "message 인자가 비어있어. message를 채워서 다시 호출해."}
         result = {"ok": True, "message": message}
-        embeds = args.get("embeds")
-        if isinstance(embeds, list):
-            result["embeds"] = embeds[:10]
         image_notes = (args.get("image_notes") or "").strip()
         if image_notes:
             result["image_notes"] = image_notes
