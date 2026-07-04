@@ -141,22 +141,6 @@ async def build_channel(
         channel_id,
     )
     groups = build_groups(chunks)
-    existing = await pool.fetch(
-        """
-        SELECT start_chunk_id, end_chunk_id
-        FROM message_chunk_search_docs
-        WHERE channel_id=$1
-        """,
-        channel_id,
-    )
-    existing_ranges = {
-        (row["start_chunk_id"], row["end_chunk_id"]) for row in existing
-    }
-    groups = [
-        group
-        for group in groups
-        if (group[0]["id"], group[-1]["id"]) not in existing_ranges
-    ]
     if remaining is not None:
         groups = groups[:remaining]
     logger.info(

@@ -118,8 +118,5 @@ async def init_schema() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_search_docs_channel_end
                 ON message_chunk_search_docs (channel_id, end_msg_id);
-
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_search_docs_chunk_range
-                ON message_chunk_search_docs (start_chunk_id, end_chunk_id);
         """)
     logger.info("DB schema initialized")

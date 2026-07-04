@@ -434,7 +434,6 @@ class SearchDocRepository:
                  start_msg_id, end_msg_id, start_at, end_at, authors,
                  source_content, search_text, embedding)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::vector)
-            ON CONFLICT (start_chunk_id, end_chunk_id) DO NOTHING
             """,
             rows,
         )
