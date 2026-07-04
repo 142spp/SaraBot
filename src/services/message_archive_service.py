@@ -245,6 +245,7 @@ class MessageArchiveService:
         limit: int = 10,
         *,
         candidate_limit: int = 50,
+        rerank_limit: int = 10,
         author: str | None = None,
         channel_id: int | None = None,
     ) -> list[dict]:
@@ -263,7 +264,40 @@ class MessageArchiveService:
             limit=candidate_limit,
             channel_id=channel_id,
         )
-        return self._merge_hybrid(semantic_matches, keyword_matches)[:limit]
+        ranked = self._merge_hybrid(semantic_matches, keyword_matches)
+        if self._llm and query.strip() and len(ranked) > 1 and rerank_limit > 1:
+            reranked = await self._rerank_with_llm(query, ranked[:rerank_limit])
+            ranked = reranked + ranked[rerank_limit:]
+        return ranked[:limit]
+
+    async def _rerank_with_llm(self, query: str, candidates: list[dict]) -> list[dict]:
+        blocks = []
+        for idx, item in enumerate(candidates, start=1):
+            blocks.append(f"[{idx}]\n{item['content'][:700]}")
+        prompt = (
+            "검색 질문과 후보 대화 조각들이 있어. "
+            "질문에 답하는 데 가장 관련 높은 후보 번호를 최대 5개 골라 "
+            "관련도 높은 순서대로 숫자만 쉼표로 답해.\n\n"
+            f"질문: {query}\n\n"
+            + "\n\n".join(blocks)
+        )
+        try:
+            answer = await self._llm.judge(prompt)
+        except Exception as e:
+            logger.warning(f"hybrid rerank failed: {e}")
+            return candidates
+
+        ordered: list[dict] = []
+        used: set[int] = set()
+        for raw in re.findall(r"\d+", answer):
+            idx = int(raw) - 1
+            if 0 <= idx < len(candidates) and idx not in used:
+                ordered.append(candidates[idx])
+                used.add(idx)
+        for idx, item in enumerate(candidates):
+            if idx not in used:
+                ordered.append(item)
+        return ordered
 
     async def sample_user_messages(
         self, guild_id: int, author: str, recent: int = 50, even: int = 250
