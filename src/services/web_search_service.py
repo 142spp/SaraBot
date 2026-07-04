@@ -8,30 +8,33 @@ logger = get_logger(__name__)
 TAVILY_URL = "https://api.tavily.com/search"
 TIMEOUT = 15
 MAX_CONTENT_CHARS = 500  # 결과 본문 1개당 상한 (토큰 절약)
-MAX_EVIDENCE_CONTENT_CHARS = 260
+MAX_INLINE_EVIDENCE_CHARS = 160
 
 
-def _clip(text: str, max_chars: int = MAX_EVIDENCE_CONTENT_CHARS) -> str:
+def _clip(text: str, max_chars: int = MAX_INLINE_EVIDENCE_CHARS) -> str:
     text = " ".join((text or "").split())
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 1].rstrip() + "…"
 
 
-def _web_evidence_markdown(results: list[dict], limit: int = 3) -> str:
-    lines: list[str] = []
+def _web_evidence_items(results: list[dict], limit: int = 3) -> list[dict]:
+    items: list[dict] = []
     for index, item in enumerate(results[:limit], start=1):
         url = item.get("url")
         if not url:
             continue
-        title = item.get("title") or "출처"
-        meta = ""
+        evidence = {
+            "id": f"E{index}",
+            "kind": "web",
+            "label": item.get("title") or "출처",
+            "url": url,
+            "quote": _clip(item.get("content") or ""),
+        }
         if item.get("published_date"):
-            meta = f"\n   발행일: `{item['published_date']}`"
-        preview = _clip(item.get("content") or "")
-        quoted = f"\n> {preview}" if preview else ""
-        lines.append(f"{index}. [{title}]({url}){meta}{quoted}")
-    return "\n\n".join(lines)
+            evidence["published_date"] = item["published_date"]
+        items.append(evidence)
+    return items
 
 
 class WebSearchService:
@@ -75,5 +78,5 @@ class WebSearchService:
             "query": query,
             "answer": data.get("answer"),
             "results": results,
-            "evidence_markdown": _web_evidence_markdown(results),
+            "evidence_items": _web_evidence_items(results),
         }

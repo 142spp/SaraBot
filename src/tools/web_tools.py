@@ -21,10 +21,10 @@ class WebSearchTool(BaseTool):
                 "description": (
                     "인터넷에서 최신/외부 정보를 검색한다. 날씨·뉴스·시세·스포츠 결과·"
                     "모르는 사람/용어/제품 등 채팅 기록 밖의 정보가 필요할 때 사용. "
-                    "상위 출처는 evidence_markdown으로 함께 돌려준다. "
-                    "respond_text에서는 results/evidence_markdown의 실제 제목·URL·발행일을 "
-                    "답변 본문 안에 자연스럽게 섞어라. "
-                    "별도의 하단 출처 섹션으로 몰아넣지 마라. 없는 출처는 만들지 마라. "
+                    "상위 출처는 evidence_items로 함께 돌려준다. "
+                    "respond_text에서는 evidence_items의 id를 {{E1}}처럼 답변 본문 안에 "
+                    "자연스럽게 섞어라. 실제 링크·제목·발행일은 시스템이 치환한다. "
+                    "별도의 하단 출처 섹션으로 몰아넣지 마라. 없는 placeholder나 출처는 만들지 마라. "
                     "(서버 채팅 기록 검색은 search_chat_history를 쓴다.)"
                 ),
                 "parameters": {

@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 from core.bot_response import BotResponse
@@ -14,6 +15,10 @@ logger = get_logger(__name__)
 
 MAX_AGENT_STEPS = 10
 TERMINAL_TOOLS = {"respond_text"}
+EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
+EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
+MAX_INLINE_EVIDENCE_QUOTE_CHARS = 120
+EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
 _KO_WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
@@ -23,6 +28,68 @@ def _now_stamp() -> str:
     now = datetime.now(KST)
     wd = _KO_WEEKDAYS[now.weekday()]
     return f"{now:%Y년 %m월 %d일} ({wd}) {now:%H:%M} KST"
+
+
+def _clip_inline_evidence_quote(text: str) -> str:
+    text = " ".join((text or "").split())
+    if len(text) <= MAX_INLINE_EVIDENCE_QUOTE_CHARS:
+        return text
+    return text[: MAX_INLINE_EVIDENCE_QUOTE_CHARS - 1].rstrip() + "…"
+
+
+def _format_inline_evidence(item: dict) -> str:
+    label = str(item.get("label") or "근거").strip()
+    url = str(item.get("url") or "").strip()
+    quote = _clip_inline_evidence_quote(str(item.get("quote") or ""))
+
+    if item.get("kind") == "web" and item.get("published_date"):
+        label = f"{label}, {item['published_date']}"
+
+    linked_label = f"[{label}]({url})" if url else label
+    if quote:
+        return f'({linked_label}: "{quote}")'
+    return f"({linked_label})"
+
+
+def _replace_evidence_placeholders(message: str, evidence_items: list[dict]) -> str:
+    replacements = {
+        f"{{{{{item['id']}}}}}": _format_inline_evidence(item)
+        for item in evidence_items
+        if item.get("id")
+    }
+    for token, replacement in replacements.items():
+        message = message.replace(token, replacement)
+
+    if EVIDENCE_PLACEHOLDER_RE.search(message):
+        logger.warning("Unknown evidence placeholder in final response")
+        message = EVIDENCE_PLACEHOLDER_RE.sub("", message)
+
+    message = re.sub(r" +([,.!?])", r"\1", message)
+    return re.sub(r" {2,}", " ", message).strip()
+
+
+def _redact_search_result_for_llm(result: dict) -> dict:
+    def scrub(value):
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                key: scrub(item)
+                for key, item in value.items()
+                if key not in EVIDENCE_LINK_KEYS
+            }
+        return value
+
+    safe = scrub(result)
+    safe["evidence_items"] = [
+        {
+            key: item[key]
+            for key in ("id", "kind", "label", "published_date")
+            if key in item
+        }
+        for item in result.get("evidence_items", [])
+    ]
+    return safe
 
 
 class Agent:
@@ -91,6 +158,7 @@ class Agent:
             {"role": "user", "content": user_content}
         ]
         tools = self._executor.get_definitions()
+        pending_evidence_items: list[dict] = []
 
         for step in range(1, MAX_AGENT_STEPS + 1):
             logger.info(f"Agent step {step}/{MAX_AGENT_STEPS}")
@@ -140,16 +208,27 @@ class Agent:
                         request.channel_id, tool_name, args, result
                     )
 
+                if tool_name in EVIDENCE_TOOL_NAMES:
+                    pending_evidence_items = result.get("evidence_items") or []
+
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": json.dumps(
+                            _redact_search_result_for_llm(result)
+                            if tool_name in EVIDENCE_TOOL_NAMES
+                            else result,
+                            ensure_ascii=False,
+                        ),
                     }
                 )
 
                 if tool_name in TERMINAL_TOOLS and result.get("ok"):
-                    msg = result.get("message", "")
+                    msg = _replace_evidence_placeholders(
+                        result.get("message", ""),
+                        pending_evidence_items,
+                    )
                     if self._conversation_memory:
                         self._conversation_memory.add_final_response(
                             request.channel_id,
