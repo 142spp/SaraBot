@@ -97,7 +97,11 @@ class SearchChatHistoryTool(BaseTool):
         semantic_matches = []
         if query:
             semantic_matches = await self._archive.semantic_search(
-                request.guild_id, query, limit=5
+                request.guild_id,
+                query,
+                limit=min(limit, 10),
+                candidate_limit=50,
+                author=author,
             )
 
         return {

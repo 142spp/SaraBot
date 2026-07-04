@@ -243,23 +243,39 @@ class ChunkRepository:
         ]
 
     async def vector_search(
-        self, guild_id: int, embedding_literal: str, limit: int = 5
+        self,
+        guild_id: int,
+        embedding_literal: str,
+        limit: int = 5,
+        author: str | None = None,
+        channel_id: int | None = None,
     ) -> list[dict]:
         """쿼리 임베딩과 cosine 거리가 가까운 대화 청크를 반환 (서버 전체)."""
         pool = await get_pool()
+        conditions = ["guild_id=$1", "embedding IS NOT NULL"]
+        params: list = [guild_id, embedding_literal]
+        if author:
+            params.append(f"%{author}%")
+            conditions.append(f"authors ILIKE ${len(params)}")
+        if channel_id:
+            params.append(channel_id)
+            conditions.append(f"channel_id = ${len(params)}")
+        params.append(limit)
         rows = await pool.fetch(
-            """
-            SELECT authors, content, start_at, end_at,
+            f"""
+            SELECT id, channel_id, authors, content, start_at, end_at,
                    embedding <=> $2::vector AS distance
             FROM message_chunks
-            WHERE guild_id=$1 AND embedding IS NOT NULL
+            WHERE {" AND ".join(conditions)}
             ORDER BY embedding <=> $2::vector ASC
-            LIMIT $3
+            LIMIT ${len(params)}
             """,
-            guild_id, embedding_literal, limit,
+            *params,
         )
         return [
             {
+                "id": r["id"],
+                "channel_id": r["channel_id"],
                 "authors": r["authors"],
                 "content": r["content"],
                 "start_at": r["start_at"].isoformat(),

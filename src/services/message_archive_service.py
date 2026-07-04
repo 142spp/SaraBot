@@ -276,7 +276,14 @@ class MessageArchiveService:
         }
 
     async def semantic_search(
-        self, guild_id: int, query: str, limit: int = 5
+        self,
+        guild_id: int,
+        query: str,
+        limit: int = 5,
+        *,
+        candidate_limit: int = 50,
+        author: str | None = None,
+        channel_id: int | None = None,
     ) -> list[dict]:
         """쿼리를 임베딩해 의미적으로 가까운 대화 청크를 반환 (서버 전체)."""
         if not query.strip():
@@ -285,4 +292,11 @@ class MessageArchiveService:
         if not embeddings:
             return []
         literal = EmbeddingService.to_pgvector(embeddings[0])
-        return await self._chunks.vector_search(guild_id, literal, limit)
+        candidates = await self._chunks.vector_search(
+            guild_id,
+            literal,
+            limit=max(limit, candidate_limit),
+            author=author,
+            channel_id=channel_id,
+        )
+        return candidates[:limit]
