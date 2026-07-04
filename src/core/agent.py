@@ -18,7 +18,7 @@ TERMINAL_TOOLS = {"respond_text"}
 EVIDENCE_TOOL_NAMES = {"search_chat_history", "web_search"}
 EVIDENCE_PLACEHOLDER_RE = re.compile(r"\{\{E\d+\}\}")
 MAX_EVIDENCE_QUOTE_CHARS = 500
-MAX_EMBED_FIELD_VALUE_CHARS = 900
+MAX_EMBED_FIELD_VALUE_CHARS = 300
 EVIDENCE_LINK_KEYS = {"url", "source_url", "context_sources"}
 
 KST = timezone(timedelta(hours=9))
@@ -31,12 +31,15 @@ def _now_stamp() -> str:
     return f"{now:%Y년 %m월 %d일} ({wd}) {now:%H:%M} KST"
 
 
-def _clip_evidence_text(text: str) -> str:
+def _clip_evidence_text(
+    text: str,
+    max_chars: int = MAX_EVIDENCE_QUOTE_CHARS,
+) -> str:
     text = " ".join((text or "").split())
     text = text.replace("```", "'''")
-    if len(text) <= MAX_EVIDENCE_QUOTE_CHARS:
+    if len(text) <= max_chars:
         return text
-    return text[: MAX_EVIDENCE_QUOTE_CHARS - 1].rstrip() + "…"
+    return text[: max_chars - 1].rstrip() + "…"
 
 
 def _sanitize_evidence_text(text: str) -> str:
@@ -68,11 +71,17 @@ def _format_evidence_field(item: dict) -> dict | None:
         name = name[:255].rstrip() + "…"
 
     lines: list[str] = []
-    quote = _clip_evidence_text(str(item.get("quote") or ""))
+    link_line = f"[원문 보기]({url})" if url else ""
+    quote_budget = MAX_EMBED_FIELD_VALUE_CHARS
+    if link_line:
+        quote_budget -= len(link_line) + 1
+    quote_budget = max(80, quote_budget)
+
+    quote = _clip_evidence_text(str(item.get("quote") or ""), max_chars=quote_budget)
     if quote:
         lines.append(quote)
     if url:
-        lines.append(f"[원문 보기]({url})")
+        lines.append(link_line)
 
     if not lines:
         return None

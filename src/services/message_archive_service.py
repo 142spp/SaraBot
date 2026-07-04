@@ -153,14 +153,25 @@ class MessageArchiveService:
     ) -> list[dict]:
         selected: list[dict] = []
         seen_urls: set[str] = set()
-        for item in keyword_matches + hybrid_matches:
-            url = item.get("source_url")
-            if not url or url in seen_urls:
-                continue
-            selected.append(item)
-            seen_urls.add(url)
-            if len(selected) >= limit:
-                break
+        hybrid_target = min(3, limit)
+        keyword_target = max(limit - hybrid_target, 0)
+
+        def add_from(items: list[dict], target: int | None = None) -> None:
+            for item in items:
+                if len(selected) >= limit:
+                    return
+                if target is not None and len(selected) >= target:
+                    return
+                url = item.get("source_url")
+                if not url or url in seen_urls:
+                    continue
+                selected.append(item)
+                seen_urls.add(url)
+
+        add_from(hybrid_matches, hybrid_target)
+        add_from(keyword_matches, hybrid_target + keyword_target)
+        add_from(hybrid_matches)
+        add_from(keyword_matches)
         return selected
 
     @staticmethod
@@ -191,7 +202,7 @@ class MessageArchiveService:
         keyword_matches: list[dict],
         hybrid_matches: list[dict],
         query: str = "",
-        limit: int = 3,
+        limit: int = 5,
     ) -> list[dict]:
         """LLM이 본문에 배치할 수 있는 구조화된 근거 항목을 만든다."""
         selected = self._select_search_evidence(keyword_matches, hybrid_matches, limit)
