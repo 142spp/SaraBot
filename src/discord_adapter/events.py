@@ -33,9 +33,9 @@ def _split_message(text: str, limit: int = DISCORD_LIMIT) -> list[str]:
 
 async def _reply_chunked(message: discord.Message, text: str) -> None:
     parts = _split_message(text)
-    await message.reply(parts[0])
+    await message.reply(parts[0], suppress_embeds=True)
     for part in parts[1:]:
-        await message.channel.send(part)
+        await message.channel.send(part, suppress_embeds=True)
 
 
 async def _include_referenced_attachments(
