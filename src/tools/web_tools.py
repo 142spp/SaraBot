@@ -21,6 +21,7 @@ class WebSearchTool(BaseTool):
                 "description": (
                     "인터넷에서 최신/외부 정보를 검색한다. 날씨·뉴스·시세·스포츠 결과·"
                     "모르는 사람/용어/제품 등 채팅 기록 밖의 정보가 필요할 때 사용. "
+                    "상위 출처는 evidence_embeds로 함께 돌려준다. respond_text에서 embeds에 그대로 넣어라. "
                     "(서버 채팅 기록 검색은 search_chat_history를 쓴다.)"
                 ),
                 "parameters": {

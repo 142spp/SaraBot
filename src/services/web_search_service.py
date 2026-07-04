@@ -8,6 +8,42 @@ logger = get_logger(__name__)
 TAVILY_URL = "https://api.tavily.com/search"
 TIMEOUT = 15
 MAX_CONTENT_CHARS = 500  # 결과 본문 1개당 상한 (토큰 절약)
+MAX_EMBED_CONTENT_CHARS = 260
+
+
+def _clip(text: str, max_chars: int = MAX_EMBED_CONTENT_CHARS) -> str:
+    text = " ".join((text or "").split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "…"
+
+
+def _web_evidence_embeds(results: list[dict], limit: int = 3) -> list[dict]:
+    embeds: list[dict] = []
+    for index, item in enumerate(results[:limit], start=1):
+        url = item.get("url")
+        if not url:
+            continue
+        fields = [{"name": "출처", "value": f"[원문 보기]({url})", "inline": False}]
+        if item.get("published_date"):
+            fields.insert(
+                0,
+                {
+                    "name": "발행일",
+                    "value": str(item["published_date"]),
+                    "inline": True,
+                },
+            )
+        embeds.append(
+            {
+                "title": f"웹 근거 {index} · {item.get('title') or '출처'}",
+                "url": url,
+                "description": _clip(item.get("content") or ""),
+                "fields": fields,
+                "footer": "web_search",
+            }
+        )
+    return embeds
 
 
 class WebSearchService:
@@ -51,4 +87,5 @@ class WebSearchService:
             "query": query,
             "answer": data.get("answer"),
             "results": results,
+            "evidence_embeds": _web_evidence_embeds(results),
         }
